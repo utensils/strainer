@@ -1,0 +1,40 @@
+[package]
+name = "strainer"
+version = "0.1.0"
+edition = "2021"
+authors = []
+description = "A rate limiting and spend management tool for AI APIs"
+license = "MIT"
+repository = "https://github.com/yourusername/strainer"
+keywords = ["ai", "rate-limiting", "api", "throttling", "spend-management"]
+categories = ["api-bindings", "web-programming", "development-tools"]
+
+# Enable additional compiler warnings and clippy lints
+[lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+multiple-crate-versions = "allow"
+
+# Development dependencies
+[dev-dependencies]
+pretty_assertions = "1.4"
+test-log = "0.2"
+tokio-test = "0.4"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.36", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+anyhow = "1.0"
+nix = { version = "0.29", features = ["signal", "process"] }

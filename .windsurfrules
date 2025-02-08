@@ -1,0 +1,46 @@
+# Project: Strainer - AI API Rate Limiting Tool
+
+## Test Driven Development
+- Write tests first for all new features
+- Follow Red-Green-Refactor cycle
+- Use test_coverage for monitoring coverage
+- Maintain minimum 90% code coverage
+- All PRs must include tests
+- Integration tests must cover CLI workflows
+- Property-based testing with proptest where applicable
+- Snapshot testing for CLI output
+
+## Code Coverage
+- Use cargo-tarpaulin for coverage reporting
+- Generate coverage reports in CI
+- Block merges if coverage decreases
+- Coverage requirements:
+  - 100% for core rate limiting logic
+  - 100% for process control code
+  - 90% overall minimum
+  - Exclude generated code from coverage
+- Report coverage in PRs
+
+[Previous sections remain the same...]
+
+## Testing
+- Write unit tests for all public functions
+- Use wiremock for API testing
+- Test rate limiting behavior
+- Test process control functionality
+- Test configuration parsing
+- Use test fixtures for complex scenarios
+- Mock external dependencies
+- Parameterized tests for edge cases
+- Fuzz testing for API interactions
+- Benchmark tests for performance critical paths
+
+## CI/CD
+- Run full test suite on every PR
+- Generate and publish coverage reports
+- Run clippy in strict mode
+- Check formatting
+- Build documentation
+- Run security audit
+- Test on all supported platforms
+- Publish test results
