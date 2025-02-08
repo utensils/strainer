@@ -35,9 +35,15 @@ pub struct Thresholds {
     pub resume: u8,
 }
 
-const fn default_warning_threshold() -> u8 { 30 }
-const fn default_critical_threshold() -> u8 { 50 }
-const fn default_resume_threshold() -> u8 { 25 }
+const fn default_warning_threshold() -> u8 {
+    30
+}
+const fn default_critical_threshold() -> u8 {
+    50
+}
+const fn default_resume_threshold() -> u8 {
+    25
+}
 
 impl Default for Thresholds {
     fn default() -> Self {
@@ -57,8 +63,12 @@ pub struct BackoffConfig {
     pub max_seconds: u32,
 }
 
-const fn default_min_backoff() -> u32 { 5 }
-const fn default_max_backoff() -> u32 { 60 }
+const fn default_min_backoff() -> u32 {
+    5
+}
+const fn default_max_backoff() -> u32 {
+    60
+}
 
 impl Default for BackoffConfig {
     fn default() -> Self {
@@ -77,7 +87,9 @@ pub struct ProcessConfig {
     pub pause_on_critical: bool,
 }
 
-const fn default_pause_on_critical() -> bool { true }
+const fn default_pause_on_critical() -> bool {
+    true
+}
 
 impl Default for ProcessConfig {
     fn default() -> Self {
@@ -97,8 +109,12 @@ pub struct ApiConfig {
     pub base_url: String,
 }
 
-fn default_api_provider() -> String { "anthropic".to_string() }
-fn default_api_base_url() -> String { "https://api.anthropic.com/v1".to_string() }
+fn default_api_provider() -> String {
+    "anthropic".to_string()
+}
+fn default_api_base_url() -> String {
+    "https://api.anthropic.com/v1".to_string()
+}
 
 impl Default for ApiConfig {
     fn default() -> Self {
@@ -118,8 +134,12 @@ pub struct LoggingConfig {
     pub format: String,
 }
 
-fn default_log_level() -> String { "info".to_string() }
-fn default_log_format() -> String { "text".to_string() }
+fn default_log_level() -> String {
+    "info".to_string()
+}
+fn default_log_format() -> String {
+    "text".to_string()
+}
 
 impl Default for LoggingConfig {
     fn default() -> Self {
@@ -131,6 +151,14 @@ impl Default for LoggingConfig {
 }
 
 impl Config {
+    /// Load configuration from a TOML file at the specified path
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The file cannot be read
+    /// - The file contents are not valid UTF-8
+    /// - The TOML content cannot be parsed into the Config structure
     pub fn from_file(path: &PathBuf) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)

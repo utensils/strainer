@@ -17,15 +17,13 @@ impl ProcessController {
     }
 
     pub fn from_command(command: &[String]) -> Result<(Self, std::process::Child)> {
-        let child = Command::new(&command[0])
-            .args(&command[1..])
-            .spawn()?;
-        
+        let child = Command::new(&command[0]).args(&command[1..]).spawn()?;
+
         // SAFETY: Process IDs on Unix systems are always positive and within i32 range
         // If this assumption is violated, we want to panic as it indicates a serious system issue
         #[allow(clippy::cast_possible_wrap)]
         let pid = child.id() as i32;
-        
+
         Ok((Self::new(pid), child))
     }
 

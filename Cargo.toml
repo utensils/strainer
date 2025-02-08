@@ -24,6 +24,7 @@ multiple-crate-versions = "allow"
 # Development dependencies
 [dev-dependencies]
 pretty_assertions = "1.4"
+proptest = "1.6.0"
 test-log = "0.2"
 tokio-test = "0.4"
 

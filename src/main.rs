@@ -5,7 +5,7 @@ mod rate_limiter;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,9 +19,7 @@ async fn main() -> Result<()> {
             .with_max_level(log_level)
             .init();
     } else {
-        tracing_subscriber::fmt()
-            .with_max_level(log_level)
-            .init();
+        tracing_subscriber::fmt().with_max_level(log_level).init();
     }
 
     info!("Starting strainer...");
@@ -30,7 +28,7 @@ async fn main() -> Result<()> {
     let _config = config::Config::from_file(&cli.config)?;
 
     match cli.command {
-        cli::Commands::Run { 
+        cli::Commands::Run {
             command,
             requests_per_minute,
             tokens_per_minute,

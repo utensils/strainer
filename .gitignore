@@ -28,3 +28,7 @@ Cargo.lock
 coverage/
 *.profraw
 .devbox
+
+
+# Misc
+slow.sh
