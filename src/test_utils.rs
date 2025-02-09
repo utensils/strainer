@@ -14,6 +14,7 @@ pub struct MockProvider {
 }
 
 impl MockProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
@@ -26,10 +27,25 @@ impl MockProvider {
         }
     }
 
+    /// Set the response that will be returned by this mock provider
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the mutex is poisoned
     pub fn set_response(&self, info: RateLimitInfo) {
         *self.default_response.lock().unwrap() = Some(info);
     }
 
+    /// Get a list of all API calls made to this mock provider
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the mutex is poisoned
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of strings representing the API calls made
+    #[must_use]
     pub fn get_calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
     }
