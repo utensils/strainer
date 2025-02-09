@@ -15,8 +15,8 @@ pub struct MockProvider {
 
 impl MockProvider {
     #[must_use]
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Box<dyn Provider> {
+        Box::new(Self {
             calls: Arc::new(Mutex::new(Vec::new())),
             responses: Arc::new(Mutex::new(HashMap::new())),
             default_response: Arc::new(Mutex::new(Some(RateLimitInfo {
@@ -24,7 +24,7 @@ impl MockProvider {
                 tokens_used: 0,
                 input_tokens_used: 0,
             }))),
-        }
+        })
     }
 
     /// Set the response that will be returned by this mock provider
@@ -67,5 +67,9 @@ impl Provider for MockProvider {
                 tokens_used: 0,
                 input_tokens_used: 0,
             }))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

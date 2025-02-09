@@ -98,7 +98,10 @@ fn test_config_from_env() -> Result<()> {
     let config = Config::from_env()?;
 
     // Verify each environment variable was properly read
-    assert_eq!(env::var("STRAINER_API_KEY").ok(), Some("env-test-key".to_string()));
+    assert_eq!(
+        env::var("STRAINER_API_KEY").ok(),
+        Some("env-test-key".to_string())
+    );
     assert_eq!(config.api.provider, "anthropic");
     assert_eq!(config.api.api_key, Some("env-test-key".to_string()));
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));

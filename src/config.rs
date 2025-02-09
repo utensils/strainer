@@ -238,27 +238,43 @@ impl Config {
 
     /// Merge another configuration into this one
     pub fn merge(&mut self, other: Self) {
-        // Only override values that are explicitly set in other
+        // API config merging
         if let Some(key) = other.api.api_key {
             self.api.api_key = Some(key);
         }
-        // Only override base_url if it's explicitly set in other
         if let Some(url) = other.api.base_url {
             self.api.base_url = Some(url);
         }
         if !other.api.provider.is_empty() {
             self.api.provider = other.api.provider;
         }
+        // Merge provider specific settings
+        for (key, value) in other.api.provider_specific {
+            self.api.provider_specific.insert(key, value);
+        }
+
+        // Rate limits merging
         if let Some(rpm) = other.limits.requests_per_minute {
             self.limits.requests_per_minute = Some(rpm);
         }
         if let Some(tpm) = other.limits.tokens_per_minute {
             self.limits.tokens_per_minute = Some(tpm);
         }
-        // Merge provider specific settings
-        for (key, value) in other.api.provider_specific {
-            self.api.provider_specific.insert(key, value);
+        if let Some(itpm) = other.limits.input_tokens_per_minute {
+            self.limits.input_tokens_per_minute = Some(itpm);
         }
+
+        // Thresholds merging
+        self.thresholds = other.thresholds;
+
+        // Backoff config merging
+        self.backoff = other.backoff;
+
+        // Process config merging
+        self.process = other.process;
+
+        // Logging config merging
+        self.logging = other.logging;
     }
 
     /// Validate the configuration
@@ -270,7 +286,8 @@ impl Config {
     /// - Field values are invalid
     pub fn validate(&self) -> Result<()> {
         // Validate required fields
-        if self.api.api_key.is_none() {
+        // API key validation - not required for mock provider
+        if self.api.provider != "mock" && self.api.api_key.is_none() {
             return Err(anyhow!("API key is required"));
         }
 

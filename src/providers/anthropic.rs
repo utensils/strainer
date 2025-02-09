@@ -43,6 +43,10 @@ impl Provider for AnthropicProvider {
             input_tokens_used: 0,
         })
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]

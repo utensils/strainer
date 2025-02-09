@@ -145,3 +145,132 @@ pub enum Commands {
         resume_threshold: u8,
     },
 }
+
+impl Commands {
+    pub fn requests_per_minute(&self) -> Option<u32> {
+        match self {
+            Commands::Run {
+                requests_per_minute,
+                ..
+            } => *requests_per_minute,
+            Commands::Watch {
+                requests_per_minute,
+                ..
+            } => *requests_per_minute,
+        }
+    }
+
+    pub fn tokens_per_minute(&self) -> Option<u32> {
+        match self {
+            Commands::Run {
+                tokens_per_minute, ..
+            } => *tokens_per_minute,
+            Commands::Watch {
+                tokens_per_minute, ..
+            } => *tokens_per_minute,
+        }
+    }
+
+    pub fn input_tokens_per_minute(&self) -> Option<u32> {
+        match self {
+            Commands::Run {
+                input_tokens_per_minute,
+                ..
+            } => *input_tokens_per_minute,
+            Commands::Watch {
+                input_tokens_per_minute,
+                ..
+            } => *input_tokens_per_minute,
+        }
+    }
+
+    pub fn warning_threshold(&self) -> u8 {
+        match self {
+            Commands::Run {
+                warning_threshold, ..
+            } => *warning_threshold,
+            Commands::Watch {
+                warning_threshold, ..
+            } => *warning_threshold,
+        }
+    }
+
+    pub fn critical_threshold(&self) -> u8 {
+        match self {
+            Commands::Run {
+                critical_threshold, ..
+            } => *critical_threshold,
+            Commands::Watch {
+                critical_threshold, ..
+            } => *critical_threshold,
+        }
+    }
+
+    pub fn resume_threshold(&self) -> u8 {
+        match self {
+            Commands::Run {
+                resume_threshold, ..
+            } => *resume_threshold,
+            Commands::Watch {
+                resume_threshold, ..
+            } => *resume_threshold,
+        }
+    }
+
+    pub fn min_backoff(&self) -> u32 {
+        match self {
+            Commands::Run { min_backoff, .. } => *min_backoff,
+            Commands::Watch { min_backoff, .. } => *min_backoff,
+        }
+    }
+
+    pub fn max_backoff(&self) -> u32 {
+        match self {
+            Commands::Run { max_backoff, .. } => *max_backoff,
+            Commands::Watch { max_backoff, .. } => *max_backoff,
+        }
+    }
+
+    pub fn api(&self) -> &str {
+        match self {
+            Commands::Run { api, .. } => api,
+            Commands::Watch { api, .. } => api,
+        }
+    }
+
+    pub fn api_key(&self) -> Option<String> {
+        match self {
+            Commands::Run { api_key, .. } => api_key.clone(),
+            Commands::Watch { api_key, .. } => api_key.clone(),
+        }
+    }
+
+    pub fn api_base_url(&self) -> &str {
+        match self {
+            Commands::Run { api_base_url, .. } => api_base_url,
+            Commands::Watch { api_base_url, .. } => api_base_url,
+        }
+    }
+
+    pub fn pause_on_warning(&self) -> bool {
+        match self {
+            Commands::Run {
+                pause_on_warning, ..
+            } => *pause_on_warning,
+            Commands::Watch {
+                pause_on_warning, ..
+            } => *pause_on_warning,
+        }
+    }
+
+    pub fn pause_on_critical(&self) -> bool {
+        match self {
+            Commands::Run {
+                pause_on_critical, ..
+            } => *pause_on_critical,
+            Commands::Watch {
+                pause_on_critical, ..
+            } => *pause_on_critical,
+        }
+    }
+}
