@@ -214,17 +214,19 @@ impl Config {
     /// This function will return an error if:
     /// - Configuration validation fails
     pub fn load() -> Result<Self> {
+        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+
         let config_paths = [
-            "strainer.toml",
-            "~/.config/strainer/config.toml",
-            "/etc/strainer/config.toml",
+            PathBuf::from("strainer.toml"),
+            home_dir.join(".config/strainer/config.toml"),
+            PathBuf::from("/etc/strainer/config.toml"),
         ];
 
         let mut config = Self::default();
 
         // Load from file if found
-        for path in config_paths {
-            if let Ok(file_config) = Self::from_file(&PathBuf::from(path)) {
+        for path in &config_paths {
+            if let Ok(file_config) = Self::from_file(path) {
                 config = file_config;
                 break;
             }

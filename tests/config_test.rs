@@ -1,9 +1,10 @@
-use std::{env, fs};
+use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
 use serde_json::json;
-use strainer::config::Config;
 use tempfile::tempdir;
+
+use strainer::config::Config;
 
 #[test]
 fn test_default_config() {
@@ -76,6 +77,25 @@ impl Drop for EnvGuard {
     }
 }
 
+struct DirGuard {
+    original_dir: PathBuf,
+}
+
+impl DirGuard {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            original_dir: env::current_dir()?,
+        })
+    }
+}
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        // Restore original directory on scope exit, ignore errors in drop
+        let _ = env::set_current_dir(&self.original_dir);
+    }
+}
+
 #[test]
 fn test_config_from_env() -> Result<()> {
     // First, clear any existing environment variables
@@ -105,15 +125,31 @@ fn test_config_from_env() -> Result<()> {
         "STRAINER_TOKENS_PER_MINUTE",
     ]);
 
-    // Create a fresh config from environment
-    let config = Config::from_env()?;
+    // Test 1: Direct environment config
+    let env_config = Config::from_env()?;
 
-    // Verify the config values directly
-    assert_eq!(config.api.api_key, Some("env-key".to_string()));
-    assert_eq!(config.api.provider, "anthropic");
-    assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
-    assert_eq!(config.limits.requests_per_minute, Some(30));
-    assert_eq!(config.limits.tokens_per_minute, Some(50_000));
+    // Verify direct environment values
+    assert_eq!(env_config.api.api_key, Some("env-key".to_string()));
+    assert_eq!(env_config.api.provider, "anthropic");
+    assert_eq!(
+        env_config.api.base_url,
+        Some("https://env.api.com".to_string())
+    );
+    assert_eq!(env_config.limits.requests_per_minute, Some(30));
+    assert_eq!(env_config.limits.tokens_per_minute, Some(50_000));
+
+    // Test 2: Full config loading process
+    let loaded_config = Config::load()?;
+
+    // Verify loaded config values are same as environment
+    assert_eq!(loaded_config.api.api_key, Some("env-key".to_string()));
+    assert_eq!(loaded_config.api.provider, "anthropic");
+    assert_eq!(
+        loaded_config.api.base_url,
+        Some("https://env.api.com".to_string())
+    );
+    assert_eq!(loaded_config.limits.requests_per_minute, Some(30));
+    assert_eq!(loaded_config.limits.tokens_per_minute, Some(50_000));
 
     Ok(())
 }
@@ -204,14 +240,11 @@ fn test_load_with_env_override() -> Result<()> {
     env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
     env::set_var("STRAINER_REQUESTS_PER_MINUTE", "60");
 
-    // Change to the temporary directory
-    let original_dir = env::current_dir()?;
+    // Create directory guard and change to temp directory
+    let _dir_guard = DirGuard::new()?;
     env::set_current_dir(dir.path())?;
 
     let config = Config::load()?;
-
-    // Restore original directory
-    env::set_current_dir(original_dir)?;
 
     // Environment variables should override file values
     assert_eq!(config.api.api_key, Some("env-key".to_string()));
