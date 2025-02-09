@@ -1,16 +1,14 @@
 use anyhow::Result;
-use std::process::Command;
+use std::env;
 use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::sleep;
 
 // Helper function to run the command to avoid rebuilding for each test
 async fn run_strainer_command(args: &[&str]) -> Result<std::process::Output> {
-    Ok(TokioCommand::new("cargo")
-        .args(["run", "--"])
-        .args(args)
-        .output()
-        .await?)
+    // Use the debug build path
+    let binary_path = env::current_dir()?.join("target/debug/strainer");
+    Ok(TokioCommand::new(binary_path).args(args).output().await?)
 }
 
 #[tokio::test]
@@ -61,8 +59,7 @@ async fn test_run_command_rate_limits() -> Result<()> {
 
 #[tokio::test]
 async fn test_run_command_process_control() -> Result<()> {
-    let mut child = Command::new("cargo")
-        .args(["run", "--"])
+    let mut child = TokioCommand::new(env::current_dir()?.join("target/debug/strainer"))
         .args([
             "run",
             "--api-key",
@@ -80,12 +77,12 @@ async fn test_run_command_process_control() -> Result<()> {
         ])
         .spawn()?;
 
-    // Give it time to start and potentially pause
-    sleep(Duration::from_millis(500)).await;
+    // Give it a shorter time to start and potentially pause
+    sleep(Duration::from_millis(100)).await;
 
     // Kill the process
-    child.kill()?;
-    let status = child.wait()?;
+    child.kill().await?;
+    let status = child.wait().await?;
 
     // Process should have been killed by us, so it should not exit successfully
     assert!(!status.success());

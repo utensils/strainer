@@ -57,6 +57,9 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
         
+      - name: Build tests first
+        run: cargo test --features testing --no-run
+        
       - name: Run tests
         run: |
           if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
@@ -84,9 +87,12 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
         
+      - name: Build tests first
+        run: cargo test --features testing --no-run
+        
       - name: Generate coverage report
         run: |
-          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80
+          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80 --timeout 120 --verbose
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
