@@ -180,6 +180,7 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
 
+        // Create a clean environment-only config
         if let Ok(api_key) = env::var("STRAINER_API_KEY") {
             config.api.api_key = Some(api_key);
         }
@@ -199,6 +200,9 @@ impl Config {
         if let Ok(tpm) = env::var("STRAINER_TOKENS_PER_MINUTE") {
             config.limits.tokens_per_minute = Some(tpm.parse()?);
         }
+
+        // Clear any pre-existing provider-specific data that might have come from default
+        config.api.provider_specific.clear();
 
         Ok(config)
     }

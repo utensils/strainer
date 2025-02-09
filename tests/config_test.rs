@@ -78,7 +78,18 @@ impl Drop for EnvGuard {
 
 #[test]
 fn test_config_from_env() -> Result<()> {
-    // Set test environment variables first
+    // First, clear any existing environment variables
+    for var in &[
+        "STRAINER_API_KEY",
+        "STRAINER_PROVIDER",
+        "STRAINER_BASE_URL",
+        "STRAINER_REQUESTS_PER_MINUTE",
+        "STRAINER_TOKENS_PER_MINUTE",
+    ] {
+        env::remove_var(var);
+    }
+
+    // Set test environment variables
     env::set_var("STRAINER_API_KEY", "env-key");
     env::set_var("STRAINER_PROVIDER", "anthropic");
     env::set_var("STRAINER_BASE_URL", "https://env.api.com");
@@ -94,7 +105,7 @@ fn test_config_from_env() -> Result<()> {
         "STRAINER_TOKENS_PER_MINUTE",
     ]);
 
-    // Create config from environment
+    // Create a fresh config from environment
     let config = Config::from_env()?;
 
     // Verify the config values directly
