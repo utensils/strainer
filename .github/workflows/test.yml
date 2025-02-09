@@ -19,8 +19,10 @@ jobs:
       STRAINER_BASE_URL: "https://env.api.com"
       STRAINER_REQUESTS_PER_MINUTE: "30"
       STRAINER_TOKENS_PER_MINUTE: "50000"
+      STRAINER_WARNING_THRESHOLD: "70"
+      STRAINER_CRITICAL_THRESHOLD: "90"
     strategy:
-      fail-fast: false # Continue with other builds even if one fails
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -82,6 +84,14 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    env:
+      STRAINER_API_KEY: "env-key"
+      STRAINER_PROVIDER: "anthropic"
+      STRAINER_BASE_URL: "https://env.api.com"
+      STRAINER_REQUESTS_PER_MINUTE: "30"
+      STRAINER_TOKENS_PER_MINUTE: "50000"
+      STRAINER_WARNING_THRESHOLD: "70"
+      STRAINER_CRITICAL_THRESHOLD: "90"
     steps:
       - uses: actions/checkout@v4
       
