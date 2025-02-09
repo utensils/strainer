@@ -48,13 +48,41 @@ jobs:
           components: clippy, rustfmt
           targets: ${{ matrix.target }}
         
-      - name: Install cross-compilation dependencies
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user
+          sudo apt-get install -y qemu-user musl-tools pkg-config libssl-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3
+
+      - name: Setup musl build environment
+        if: contains(matrix.target, 'musl')
+        run: |
+          # Install musl-gcc
+          sudo apt-get install -y musl-tools
+          # Install musl OpenSSL
+          wget https://www.openssl.org/source/openssl-3.1.4.tar.gz
+          tar xzf openssl-3.1.4.tar.gz
+          cd openssl-3.1.4
+          # Configure and build OpenSSL for musl
+          CC="musl-gcc -fPIC" ./Configure no-shared no-async --prefix=/usr/local/musl --openssldir=/usr/local/musl linux-x86_64
+          make -j$(nproc)
+          sudo make install
+          cd ..
+          # Set environment variables for OpenSSL
+          echo "OPENSSL_DIR=/usr/local/musl" >> $GITHUB_ENV
+          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
+          
+      - name: Setup cross-compilation for ARM
+        if: contains(matrix.target, 'aarch64') || contains(matrix.target, 'armv7')
+        run: |
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
           cargo install cross
-      
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
