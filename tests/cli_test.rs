@@ -1,14 +1,16 @@
 use anyhow::Result;
 use std::process::Command;
 use std::time::Duration;
+use tokio::process::Command as TokioCommand;
 use tokio::time::sleep;
 
 // Helper function to run the command to avoid rebuilding for each test
 async fn run_strainer_command(args: &[&str]) -> Result<std::process::Output> {
-    Ok(Command::new("cargo")
+    Ok(TokioCommand::new("cargo")
         .args(["run", "--"])
         .args(args)
-        .output()?)
+        .output()
+        .await?)
 }
 
 #[tokio::test]
@@ -61,7 +63,7 @@ async fn test_run_command_rate_limits() -> Result<()> {
 async fn test_run_command_process_control() -> Result<()> {
     let mut child = Command::new("cargo")
         .args(["run", "--"])
-        .args(&[
+        .args([
             "run",
             "--api-key",
             "test_key",
