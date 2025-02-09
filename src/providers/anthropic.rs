@@ -11,8 +11,19 @@ pub struct AnthropicProvider {
 
 impl AnthropicProvider {
     /// Create a new Anthropic provider with the given configuration
+    /// Creates a new Anthropic API provider with the given configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Missing API key in configuration
+    /// - Invalid API endpoint URL
+    /// - Required configuration parameters are missing
     pub fn new(config: &ApiConfig) -> Result<Self> {
-        let api_key = config.key.clone().ok_or_else(|| anyhow::anyhow!("API key is required for Anthropic"))?;
+        let api_key = config
+            .key
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("API key is required for Anthropic"))?;
         Ok(Self {
             api_key,
             base_url: config.base_url.clone(),

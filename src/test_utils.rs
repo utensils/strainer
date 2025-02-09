@@ -1,10 +1,10 @@
 // This module is only compiled when running tests
 #![cfg(any(test, feature = "testing"))]
 
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use anyhow::Result;
 use crate::providers::{Provider, RateLimitInfo};
+use anyhow::Result;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct MockProvider {
@@ -37,8 +37,14 @@ impl MockProvider {
 
 impl Provider for MockProvider {
     fn get_rate_limits(&self) -> Result<RateLimitInfo> {
-        self.calls.lock().unwrap().push("get_rate_limits".to_string());
-        Ok(self.default_response.lock().unwrap()
+        self.calls
+            .lock()
+            .unwrap()
+            .push("get_rate_limits".to_string());
+        Ok(self
+            .default_response
+            .lock()
+            .unwrap()
             .clone()
             .unwrap_or(RateLimitInfo {
                 requests_used: 0,

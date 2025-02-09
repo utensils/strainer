@@ -1,4 +1,4 @@
-use strainer::{RateLimits, Thresholds, BackoffConfig};
+use strainer::{BackoffConfig, RateLimits, Thresholds};
 
 // Basic tests that don't require mocking
 #[test]
@@ -8,7 +8,7 @@ fn test_rate_limits_validation() {
         tokens_per_minute: Some(1000),
         input_tokens_per_minute: Some(500),
     };
-    
+
     assert!(limits.requests_per_minute.unwrap() > 0);
     assert!(limits.tokens_per_minute.unwrap() > 0);
     assert!(limits.input_tokens_per_minute.unwrap() > 0);
@@ -21,7 +21,7 @@ fn test_thresholds_validation() {
         critical: 50,
         resume: 25,
     };
-    
+
     assert!(thresholds.warning < thresholds.critical);
     assert!(thresholds.resume < thresholds.warning);
 }
@@ -32,7 +32,7 @@ fn test_backoff_validation() {
         min_seconds: 5,
         max_seconds: 60,
     };
-    
+
     assert!(backoff.min_seconds < backoff.max_seconds);
 }
 
@@ -40,12 +40,12 @@ fn test_backoff_validation() {
 #[cfg(feature = "testing")]
 mod integration_tests {
     use super::*;
-    use strainer::{RateLimiter, test_utils::MockProvider};
-    
+    use strainer::{test_utils::MockProvider, RateLimiter};
+
     #[test]
     fn test_rate_limiter_integration() {
         let provider = MockProvider::new();
-        
+
         // Set up test response
         provider.set_response(strainer::RateLimitInfo {
             requests_used: 10,
@@ -70,7 +70,7 @@ mod integration_tests {
             },
             provider,
         );
-        
+
         // Test limits
         assert!(limiter.check_limits().is_ok());
     }

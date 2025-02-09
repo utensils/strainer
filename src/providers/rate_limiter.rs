@@ -1,5 +1,5 @@
-use crate::config::{BackoffConfig, RateLimits, Thresholds};
 use super::Provider;
+use crate::config::{BackoffConfig, RateLimits, Thresholds};
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -34,7 +34,7 @@ impl UsageStats {
     }
 }
 
-/// RateLimiter manages API rate limits with thresholds for warning and critical levels
+/// `RateLimiter` manages API rate limits with thresholds for warning and critical levels
 #[derive(Debug)]
 pub struct RateLimiter<P: Provider> {
     limits: RateLimits,
@@ -45,9 +45,14 @@ pub struct RateLimiter<P: Provider> {
 }
 
 impl<P: Provider> RateLimiter<P> {
-    /// Create a new RateLimiter with the specified configuration
+    /// Create a new `RateLimiter` with the specified configuration
     #[must_use]
-    pub fn new(limits: RateLimits, thresholds: Thresholds, backoff: BackoffConfig, provider: P) -> Self {
+    pub fn new(
+        limits: RateLimits,
+        thresholds: Thresholds,
+        backoff: BackoffConfig,
+        provider: P,
+    ) -> Self {
         Self {
             limits,
             thresholds,
@@ -74,10 +79,24 @@ impl<P: Provider> RateLimiter<P> {
     }
 
     /// Check if any rate limits are exceeded and get appropriate backoff time
+    /// Check if the current usage is within configured limits
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of (bool, Duration) where:
+    /// - bool indicates if the operation should proceed
+    /// - Duration indicates how long to wait before retrying if needed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Unable to fetch current rate limit information
+    /// - Rate limit data is invalid or corrupted
+    /// - Provider communication fails
     pub fn check_limits(&mut self) -> Result<(bool, Duration)> {
         // Get current usage from provider
         let rate_info = self.provider.get_rate_limits()?;
-        
+
         // If all limits are None, allow proceeding with minimum backoff
         if self.limits.requests_per_minute.is_none()
             && self.limits.tokens_per_minute.is_none()
@@ -97,14 +116,17 @@ impl<P: Provider> RateLimiter<P> {
         );
 
         // Calculate percentages for each limit type
-        let requests_percent = self.limits.requests_per_minute
-            .map_or(0, |limit| Self::calculate_usage_percent(self.usage.requests_used, limit));
+        let requests_percent = self.limits.requests_per_minute.map_or(0, |limit| {
+            Self::calculate_usage_percent(self.usage.requests_used, limit)
+        });
 
-        let tokens_percent = self.limits.tokens_per_minute
-            .map_or(0, |limit| Self::calculate_usage_percent(self.usage.tokens_used, limit));
+        let tokens_percent = self.limits.tokens_per_minute.map_or(0, |limit| {
+            Self::calculate_usage_percent(self.usage.tokens_used, limit)
+        });
 
-        let input_tokens_percent = self.limits.input_tokens_per_minute
-            .map_or(0, |limit| Self::calculate_usage_percent(self.usage.input_tokens_used, limit));
+        let input_tokens_percent = self.limits.input_tokens_per_minute.map_or(0, |limit| {
+            Self::calculate_usage_percent(self.usage.input_tokens_used, limit)
+        });
 
         // Log current usage
         info!(
@@ -113,7 +135,9 @@ impl<P: Provider> RateLimiter<P> {
         );
 
         // Find the highest usage percentage
-        let max_percent = requests_percent.max(tokens_percent).max(input_tokens_percent);
+        let max_percent = requests_percent
+            .max(tokens_percent)
+            .max(input_tokens_percent);
 
         // Convert thresholds to u32 for comparison
         let critical = u32::from(self.thresholds.critical);
@@ -123,17 +147,29 @@ impl<P: Provider> RateLimiter<P> {
         // Check thresholds in priority order
         if max_percent >= critical {
             warn!("Usage at or above critical threshold ({}%)", critical);
-            Ok((false, Duration::from_secs(u64::from(self.backoff.max_seconds))))
+            Ok((
+                false,
+                Duration::from_secs(u64::from(self.backoff.max_seconds)),
+            ))
         } else if max_percent >= warning {
             warn!("Usage at or above warning threshold ({}%)", warning);
-            Ok((true, Duration::from_secs(u64::from(self.backoff.min_seconds))))
+            Ok((
+                true,
+                Duration::from_secs(u64::from(self.backoff.min_seconds)),
+            ))
         } else if max_percent <= resume {
             // Reset usage stats when below resume threshold
             self.usage = UsageStats::default();
-            Ok((true, Duration::from_secs(u64::from(self.backoff.min_seconds))))
+            Ok((
+                true,
+                Duration::from_secs(u64::from(self.backoff.min_seconds)),
+            ))
         } else {
             // Normal operation
-            Ok((true, Duration::from_secs(u64::from(self.backoff.min_seconds))))
+            Ok((
+                true,
+                Duration::from_secs(u64::from(self.backoff.min_seconds)),
+            ))
         }
     }
 }
@@ -189,11 +225,26 @@ mod tests {
 
     #[test]
     fn test_calculate_usage_percent() {
-        assert_eq!(RateLimiter::<MockProvider>::calculate_usage_percent(50, 100), 50);
-        assert_eq!(RateLimiter::<MockProvider>::calculate_usage_percent(0, 100), 0);
-        assert_eq!(RateLimiter::<MockProvider>::calculate_usage_percent(100, 100), 100);
-        assert_eq!(RateLimiter::<MockProvider>::calculate_usage_percent(25, 100), 25);
-        assert_eq!(RateLimiter::<MockProvider>::calculate_usage_percent(10, 0), 0);
+        assert_eq!(
+            RateLimiter::<MockProvider>::calculate_usage_percent(50, 100),
+            50
+        );
+        assert_eq!(
+            RateLimiter::<MockProvider>::calculate_usage_percent(0, 100),
+            0
+        );
+        assert_eq!(
+            RateLimiter::<MockProvider>::calculate_usage_percent(100, 100),
+            100
+        );
+        assert_eq!(
+            RateLimiter::<MockProvider>::calculate_usage_percent(25, 100),
+            25
+        );
+        assert_eq!(
+            RateLimiter::<MockProvider>::calculate_usage_percent(10, 0),
+            0
+        );
     }
 
     #[test]

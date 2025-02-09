@@ -17,16 +17,16 @@ proptest! {
             critical: critical_val,
             resume: resume_val,
         };
-        
+
         // Test that threshold values are in valid ranges
         prop_assert!(config.warning < config.critical);
         prop_assert!(config.resume < config.warning);
-        
+
         let backoff = BackoffConfig {
             min_seconds: min_backoff,
             max_seconds: max_backoff,
         };
-        
+
         // Test that backoff values are in valid ranges
         prop_assert!(backoff.min_seconds < backoff.max_seconds);
     }
@@ -36,12 +36,7 @@ proptest! {
 #[cfg(feature = "testing")]
 mod prop_tests {
     use super::*;
-    use strainer::{
-        RateLimiter,
-        RateLimits,
-        providers::RateLimitInfo,
-        test_utils::MockProvider,
-    };
+    use strainer::{providers::RateLimitInfo, test_utils::MockProvider, RateLimiter, RateLimits};
 
     proptest! {
         #[test]

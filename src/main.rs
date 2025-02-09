@@ -1,3 +1,3 @@
-fn main() -> anyhow::Result<()> {
-    Ok(())
+fn main() {
+    // TODO: Implement CLI entry point
 }
