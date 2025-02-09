@@ -14,28 +14,45 @@ env:
 jobs:
   test:
     strategy:
-      fail-fast: false # Continue with other builds even if one fails
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            name: Linux (x86_64)
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
-            name: Linux (x86_64 musl)
-            target: x86_64-unknown-linux-musl
-          - os: ubuntu-latest
-            name: Linux (aarch64)
-            target: aarch64-unknown-linux-gnu
-          - os: ubuntu-latest
-            name: Linux (aarch64 musl)
-            target: aarch64-unknown-linux-musl
-          - os: ubuntu-latest
-            name: Linux (armv7)
-            target: armv7-unknown-linux-gnueabihf
-          - os: macos-14
-            name: macOS (Apple Silicon)
-          - os: macos-latest
-            name: macOS (Intel x86_64)
+          # Linux (GNU)
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: Linux GNU x86_64
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+            name: Linux GNU i686
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: Linux GNU aarch64
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-latest
+            name: Linux GNU armv7
+          - target: arm-unknown-linux-gnueabi
+            os: ubuntu-latest
+            name: Linux GNU arm
+          
+          # Linux (MUSL)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: Linux MUSL x86_64
+          - target: i686-unknown-linux-musl
+            os: ubuntu-latest
+            name: Linux MUSL i686
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            name: Linux MUSL aarch64
+          
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: macOS x86_64
+          - target: aarch64-apple-darwin
+            os: macos-14
+            name: macOS aarch64
+          
     name: Test ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -78,9 +95,9 @@ jobs:
           echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
           
       - name: Setup cross-compilation for ARM
-        if: contains(matrix.target, 'aarch64') || contains(matrix.target, 'armv7')
+        if: contains(matrix.target, 'arm')
         run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+          sudo apt-get install -y gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
           cargo install cross
 
       - name: Cache dependencies
