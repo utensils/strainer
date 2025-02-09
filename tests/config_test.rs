@@ -98,6 +98,7 @@ impl Drop for DirGuard {
 
 #[test]
 fn test_config_from_env() -> Result<()> {
+    use tempfile::tempdir;
     // First, clear any existing environment variables
     for var in &[
         "STRAINER_API_KEY",
@@ -124,6 +125,10 @@ fn test_config_from_env() -> Result<()> {
         "STRAINER_REQUESTS_PER_MINUTE",
         "STRAINER_TOKENS_PER_MINUTE",
     ]);
+
+    // Create an isolated directory and set it for Config::load
+    let dir = tempdir()?;
+    env::set_current_dir(dir.path())?; // Set temp directory for this test
 
     // Test 1: Direct environment config
     let env_config = Config::from_env()?;
