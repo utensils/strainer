@@ -63,10 +63,6 @@ struct EnvGuard {
 
 impl EnvGuard {
     fn new(vars: Vec<&'static str>) -> Self {
-        // Clean up any existing values
-        for var in &vars {
-            env::remove_var(var);
-        }
         Self { vars }
     }
 }
@@ -82,6 +78,14 @@ impl Drop for EnvGuard {
 
 #[test]
 fn test_config_from_env() -> Result<()> {
+    // Set test environment variables first
+    env::set_var("STRAINER_API_KEY", "env-test-key");
+    env::set_var("STRAINER_PROVIDER", "anthropic");
+    env::set_var("STRAINER_BASE_URL", "https://env.api.com");
+    env::set_var("STRAINER_REQUESTS_PER_MINUTE", "30");
+    env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
+
+    // Create a guard to clean up environment variables on test completion
     let _guard = EnvGuard::new(vec![
         "STRAINER_API_KEY",
         "STRAINER_PROVIDER",
@@ -90,14 +94,11 @@ fn test_config_from_env() -> Result<()> {
         "STRAINER_TOKENS_PER_MINUTE",
     ]);
 
-    // Set test environment variables
-    env::set_var("STRAINER_API_KEY", "env-test-key");
-    env::set_var("STRAINER_PROVIDER", "anthropic");
-    env::set_var("STRAINER_BASE_URL", "https://env.api.com");
-    env::set_var("STRAINER_REQUESTS_PER_MINUTE", "30");
-    env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
-
+    // Create config from environment
     let config = Config::from_env()?;
+
+    // Verify each environment variable was properly read
+    assert_eq!(env::var("STRAINER_API_KEY").ok(), Some("env-test-key".to_string()));
     assert_eq!(config.api.provider, "anthropic");
     assert_eq!(config.api.api_key, Some("env-test-key".to_string()));
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
