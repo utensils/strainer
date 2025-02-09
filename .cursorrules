@@ -1,46 +1,83 @@
-# Project: Strainer - AI API Rate Limiting Tool
+# Strainer Development Rules
 
-## Test Driven Development
-- Write tests first for all new features
-- Follow Red-Green-Refactor cycle
-- Use test_coverage for monitoring coverage
-- Maintain minimum 90% code coverage
-- All PRs must include tests
-- Integration tests must cover CLI workflows
-- Property-based testing with proptest where applicable
-- Snapshot testing for CLI output
+## Core Principles
+- Provider-based architecture for API service abstraction
+- Strong rate limiting and process control
+- Configuration through TOML and environment variables
+- Comprehensive test coverage
+- Clean error handling
 
-## Code Coverage
-- Use cargo-tarpaulin for coverage reporting
-- Generate coverage reports in CI
-- Block merges if coverage decreases
-- Coverage requirements:
-  - 100% for core rate limiting logic
-  - 100% for process control code
-  - 90% overall minimum
-  - Exclude generated code from coverage
-- Report coverage in PRs
+## Testing Requirements
+1. Test Coverage Goals:
+   - Minimum 90% overall coverage
+   - 100% coverage for rate limiting core
+   - 100% coverage for process control
+   - Coverage tracked via cargo-tarpaulin
 
-[Previous sections remain the same...]
+2. Testing Approaches:
+   - Unit tests for all public functions
+   - Property-based testing with proptest for rate limiting
+   - Integration tests for CLI workflows
+   - Test fixtures for provider implementations
+   - Mock external dependencies where needed
 
-## Testing
-- Write unit tests for all public functions
-- Use wiremock for API testing
-- Test rate limiting behavior
-- Test process control functionality
-- Test configuration parsing
-- Use test fixtures for complex scenarios
-- Mock external dependencies
-- Parameterized tests for edge cases
-- Fuzz testing for API interactions
-- Benchmark tests for performance critical paths
+3. Test Organization:
+   - Basic tests run with `cargo test`
+   - Extended tests with `cargo test --features testing`
+   - Provider-specific tests in respective modules
+   - Regression tests preserved via proptest
 
-## CI/CD
-- Run full test suite on every PR
-- Generate and publish coverage reports
-- Run clippy in strict mode
-- Check formatting
-- Build documentation
-- Run security audit
-- Test on all supported platforms
-- Publish test results
+## Code Quality
+1. Static Analysis:
+   - Clippy in strict mode
+   - rustfmt for consistent formatting
+   - Documentation requirements for public APIs
+
+2. Error Handling:
+   - Custom error types per module
+   - No unwrap() in production code
+   - Proper error propagation
+   - Clear error messages
+
+3. Provider Implementation:
+   - Must implement Provider trait
+   - Separate rate limit handling
+   - Clear configuration parsing
+   - Comprehensive API error handling
+
+## CI/CD Pipeline
+1. Required Checks:
+   - Full test suite
+   - Coverage reporting
+   - Clippy analysis
+   - Format verification
+   - Documentation build
+   - Security audit
+
+2. PR Requirements:
+   - Tests for new features
+   - Updated documentation
+   - No coverage decrease
+   - Clean clippy run
+   - Passing integration tests
+
+## Development Workflow
+1. Feature Development:
+   - Create feature branch
+   - Write tests first
+   - Implement feature
+   - Update documentation
+   - Submit PR
+
+2. Provider Addition:
+   - Implement Provider trait
+   - Add configuration support
+   - Write provider tests
+   - Add integration tests
+   - Document API specifics
+
+3. Configuration Changes:
+   - Update TOML schema
+   - Add environment variables
+   - Update documentation
+   - Add migration notes if needed

@@ -21,13 +21,14 @@ impl AnthropicProvider {
     /// - Required configuration parameters are missing
     pub fn new(config: &ApiConfig) -> Result<Self> {
         let api_key = config
-            .key
+            .api_key
             .clone()
             .ok_or_else(|| anyhow::anyhow!("API key is required for Anthropic"))?;
-        Ok(Self {
-            api_key,
-            base_url: config.base_url.clone(),
-        })
+        let base_url = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+        Ok(Self { api_key, base_url })
     }
 }
 

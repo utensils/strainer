@@ -33,6 +33,22 @@ Configuration is done via TOML files. Example configuration:
 
 ## Development
 
+### Quality Checks
+
+We provide a convenient script to run all quality checks:
+
+```bash
+./scripts/check.sh
+```
+
+This script will:
+1. Check and fix code formatting
+2. Run clippy lints with all features enabled
+3. Run all tests (basic and extended)
+4. Generate code coverage reports
+
+The script requires `cargo-tarpaulin` for coverage reporting and will install it if not present.
+
 ### Testing
 
 The project uses a two-tier testing strategy:
