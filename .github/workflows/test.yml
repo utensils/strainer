@@ -13,6 +13,12 @@ env:
 
 jobs:
   test:
+    env:
+      STRAINER_API_KEY: "env-key"
+      STRAINER_PROVIDER: "anthropic"
+      STRAINER_BASE_URL: "https://env.api.com"
+      STRAINER_REQUESTS_PER_MINUTE: "30"
+      STRAINER_TOKENS_PER_MINUTE: "50000"
     strategy:
       fail-fast: false # Continue with other builds even if one fails
       matrix:
