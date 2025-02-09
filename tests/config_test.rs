@@ -2,6 +2,7 @@ use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
 use serde_json::json;
+use std::io::Write;
 use tempfile::tempdir;
 
 use strainer::config::Config;
@@ -240,10 +241,22 @@ fn test_config_validation() {
 
 #[test]
 fn test_load_with_env_override() -> Result<()> {
-    // Create guards for directory and variables
+    // Create directory guard
     let _dir_guard = DirGuard::new()?;
 
-    // Create environment guard before setting any variables
+    // Clear any existing environment variables first
+    env::remove_var("STRAINER_API_KEY");
+    env::remove_var("STRAINER_BASE_URL");
+    env::remove_var("STRAINER_TOKENS_PER_MINUTE");
+    env::remove_var("STRAINER_REQUESTS_PER_MINUTE");
+
+    // Set environment variables
+    env::set_var("STRAINER_API_KEY", "env-key");
+    env::set_var("STRAINER_BASE_URL", "https://env.api.com");
+    env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
+    env::set_var("STRAINER_REQUESTS_PER_MINUTE", "30");
+
+    // Create environment guard after setting variables
     let _env_guard = EnvGuard::new(vec![
         "STRAINER_API_KEY",
         "STRAINER_TOKENS_PER_MINUTE",
@@ -253,6 +266,8 @@ fn test_load_with_env_override() -> Result<()> {
 
     let dir = tempdir()?;
     let config_path = dir.path().join("strainer.toml");
+    let debug_path = dir.path().join("debug.log");
+    let mut debug_file = fs::File::create(&debug_path)?;
 
     let config_content = r#"
         [api]
@@ -265,38 +280,56 @@ fn test_load_with_env_override() -> Result<()> {
     "#;
 
     fs::write(&config_path, config_content)?;
-
-    // Clear any existing environment variables first
-    env::remove_var("STRAINER_API_KEY");
-    env::remove_var("STRAINER_BASE_URL");
-    env::remove_var("STRAINER_TOKENS_PER_MINUTE");
-    env::remove_var("STRAINER_REQUESTS_PER_MINUTE");
-
-    // Set environment variables
-    env::set_var("STRAINER_API_KEY", "env-key");
-    env::set_var("STRAINER_BASE_URL", "https://env.api.com");
-    env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
-    env::set_var("STRAINER_REQUESTS_PER_MINUTE", "60");
-
     env::set_current_dir(dir.path())?;
+
+    // Debug: Write environment variable value
+    writeln!(
+        debug_file,
+        "Environment RPM: {:?}",
+        env::var("STRAINER_REQUESTS_PER_MINUTE")
+    )?;
+
+    // Load initial config from file
+    let file_config = Config::from_file(&config_path)?;
+    writeln!(
+        debug_file,
+        "File Config RPM: {:?}",
+        file_config.limits.requests_per_minute
+    )?;
+
+    // Load environment config
+    let env_config = Config::from_env()?;
+    writeln!(
+        debug_file,
+        "Env Config RPM: {:?}",
+        env_config.limits.requests_per_minute
+    )?;
+
     let config = Config::load()?;
 
     // Debug Prints
-    println!("Loaded API Key: {:?}", config.api.api_key);
-    println!("Loaded Base URL: {:?}", config.api.base_url);
-    println!(
+    writeln!(debug_file, "Final Config:")?;
+    writeln!(debug_file, "Loaded API Key: {:?}", config.api.api_key)?;
+    writeln!(debug_file, "Loaded Base URL: {:?}", config.api.base_url)?;
+    writeln!(
+        debug_file,
         "Loaded Requests per Minute: {:?}",
         config.limits.requests_per_minute
-    );
-    println!(
+    )?;
+    writeln!(
+        debug_file,
         "Loaded Tokens per Minute: {:?}",
         config.limits.tokens_per_minute
-    );
+    )?;
+
+    // Print the debug file contents
+    let debug_contents = fs::read_to_string(&debug_path)?;
+    println!("Debug Log:\n{debug_contents}");
 
     // Environment variables should override file values
     assert_eq!(config.api.api_key, Some("env-key".to_string())); // env overrides file
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string())); // env overrides file
-    assert_eq!(config.limits.requests_per_minute, Some(60)); // env overrides file
+    assert_eq!(config.limits.requests_per_minute, Some(30)); // env overrides file
     assert_eq!(config.limits.tokens_per_minute, Some(50_000)); // env provides this value
 
     Ok(())

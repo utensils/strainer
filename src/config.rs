@@ -275,7 +275,7 @@ impl Config {
             }
         }
 
-        // Load and merge environment variables
+        // Load and merge environment variables last to ensure they take precedence
         if let Ok(env_config) = Self::from_env() {
             config.merge(env_config);
         }
@@ -285,45 +285,64 @@ impl Config {
         Ok(config)
     }
 
-    /// Merge another configuration into this one
+    /// Merge another configuration into this one, with the other configuration taking precedence
     pub fn merge(&mut self, other: Self) {
         // API config merging
-        if let Some(key) = other.api.api_key {
-            self.api.api_key = Some(key);
+        if other.api.api_key.is_some() {
+            self.api.api_key = other.api.api_key;
         }
-        if let Some(url) = other.api.base_url {
-            self.api.base_url = Some(url);
+        if other.api.base_url.is_some() {
+            self.api.base_url = other.api.base_url;
         }
         if !other.api.provider.is_empty() {
             self.api.provider = other.api.provider;
         }
-        // Merge provider specific settings
-        for (key, value) in other.api.provider_specific {
-            self.api.provider_specific.insert(key, value);
-        }
+        // Merge provider_specific map
+        self.api
+            .provider_specific
+            .extend(other.api.provider_specific);
 
-        // Rate limits merging
-        if let Some(rpm) = other.limits.requests_per_minute {
-            self.limits.requests_per_minute = Some(rpm);
+        // Rate limits merging - ensure environment values take precedence
+        if other.limits.requests_per_minute.is_some() {
+            self.limits.requests_per_minute = other.limits.requests_per_minute;
         }
-        if let Some(tpm) = other.limits.tokens_per_minute {
-            self.limits.tokens_per_minute = Some(tpm);
+        if other.limits.tokens_per_minute.is_some() {
+            self.limits.tokens_per_minute = other.limits.tokens_per_minute;
         }
-        if let Some(itpm) = other.limits.input_tokens_per_minute {
-            self.limits.input_tokens_per_minute = Some(itpm);
+        if other.limits.input_tokens_per_minute.is_some() {
+            self.limits.input_tokens_per_minute = other.limits.input_tokens_per_minute;
         }
 
         // Thresholds merging
-        self.thresholds = other.thresholds;
+        if other.thresholds.warning != default_warning_threshold() {
+            self.thresholds.warning = other.thresholds.warning;
+        }
+        if other.thresholds.critical != default_critical_threshold() {
+            self.thresholds.critical = other.thresholds.critical;
+        }
+        if other.thresholds.resume != default_resume_threshold() {
+            self.thresholds.resume = other.thresholds.resume;
+        }
 
         // Backoff config merging
-        self.backoff = other.backoff;
+        if other.backoff.min_seconds != default_min_backoff() {
+            self.backoff.min_seconds = other.backoff.min_seconds;
+        }
+        if other.backoff.max_seconds != default_max_backoff() {
+            self.backoff.max_seconds = other.backoff.max_seconds;
+        }
 
         // Process config merging
-        self.process = other.process;
+        self.process.pause_on_warning = other.process.pause_on_warning;
+        self.process.pause_on_critical = other.process.pause_on_critical;
 
         // Logging config merging
-        self.logging = other.logging;
+        if other.logging.level != default_log_level() {
+            self.logging.level = other.logging.level;
+        }
+        if other.logging.format != default_log_format() {
+            self.logging.format = other.logging.format;
+        }
     }
 
     /// Validate the configuration
