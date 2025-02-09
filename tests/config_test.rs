@@ -59,20 +59,27 @@ fn test_config_from_file() -> Result<()> {
 }
 
 struct EnvGuard {
-    vars: Vec<&'static str>,
+    vars: Vec<(&'static str, Option<String>)>,
 }
 
 impl EnvGuard {
-    const fn new(vars: Vec<&'static str>) -> Self {
+    fn new(vars: Vec<&'static str>) -> Self {
+        let vars = vars
+            .into_iter()
+            .map(|var| (var, env::var(var).ok()))
+            .collect();
         Self { vars }
     }
 }
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        // Clean up on scope exit
-        for var in &self.vars {
-            env::remove_var(var);
+        // Restore original environment state
+        for (var, original_value) in &self.vars {
+            match original_value {
+                Some(value) => env::set_var(var, value),
+                None => env::remove_var(var),
+            }
         }
     }
 }
@@ -99,6 +106,9 @@ impl Drop for DirGuard {
 #[test]
 fn test_config_from_env() -> Result<()> {
     use tempfile::tempdir;
+
+    // Create a directory guard to restore the working directory
+    let _dir_guard = DirGuard::new()?;
     // First, clear any existing environment variables
     for var in &[
         "STRAINER_API_KEY",
@@ -230,7 +240,11 @@ fn test_config_validation() {
 
 #[test]
 fn test_load_with_env_override() -> Result<()> {
-    let _guard = EnvGuard::new(vec![
+    // Create guards for directory and variables
+    let _dir_guard = DirGuard::new()?;
+
+    // Create environment guard before setting any variables
+    let _env_guard = EnvGuard::new(vec![
         "STRAINER_API_KEY",
         "STRAINER_TOKENS_PER_MINUTE",
         "STRAINER_BASE_URL",
@@ -252,23 +266,38 @@ fn test_load_with_env_override() -> Result<()> {
 
     fs::write(&config_path, config_content)?;
 
+    // Clear any existing environment variables first
+    env::remove_var("STRAINER_API_KEY");
+    env::remove_var("STRAINER_BASE_URL");
+    env::remove_var("STRAINER_TOKENS_PER_MINUTE");
+    env::remove_var("STRAINER_REQUESTS_PER_MINUTE");
+
     // Set environment variables
     env::set_var("STRAINER_API_KEY", "env-key");
     env::set_var("STRAINER_BASE_URL", "https://env.api.com");
     env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
     env::set_var("STRAINER_REQUESTS_PER_MINUTE", "60");
 
-    // Create directory guard and change to temp directory
-    let _dir_guard = DirGuard::new()?;
     env::set_current_dir(dir.path())?;
-
     let config = Config::load()?;
 
+    // Debug Prints
+    println!("Loaded API Key: {:?}", config.api.api_key);
+    println!("Loaded Base URL: {:?}", config.api.base_url);
+    println!(
+        "Loaded Requests per Minute: {:?}",
+        config.limits.requests_per_minute
+    );
+    println!(
+        "Loaded Tokens per Minute: {:?}",
+        config.limits.tokens_per_minute
+    );
+
     // Environment variables should override file values
-    assert_eq!(config.api.api_key, Some("env-key".to_string()));
-    assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
-    assert_eq!(config.limits.requests_per_minute, Some(60));
-    assert_eq!(config.limits.tokens_per_minute, Some(50_000));
+    assert_eq!(config.api.api_key, Some("env-key".to_string())); // env overrides file
+    assert_eq!(config.api.base_url, Some("https://env.api.com".to_string())); // env overrides file
+    assert_eq!(config.limits.requests_per_minute, Some(60)); // env overrides file
+    assert_eq!(config.limits.tokens_per_minute, Some(50_000)); // env provides this value
 
     Ok(())
 }

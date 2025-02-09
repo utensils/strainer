@@ -180,7 +180,7 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let mut config = Self::default();
 
-        // Create a clean environment-only config
+        // API configuration
         if let Ok(api_key) = env::var("STRAINER_API_KEY") {
             config.api.api_key = Some(api_key);
         }
@@ -193,6 +193,7 @@ impl Config {
             config.api.base_url = Some(base_url);
         }
 
+        // Rate limits
         if let Ok(rpm) = env::var("STRAINER_REQUESTS_PER_MINUTE") {
             config.limits.requests_per_minute = Some(rpm.parse()?);
         }
@@ -201,8 +202,49 @@ impl Config {
             config.limits.tokens_per_minute = Some(tpm.parse()?);
         }
 
-        // Clear any pre-existing provider-specific data that might have come from default
-        config.api.provider_specific.clear();
+        if let Ok(itpm) = env::var("STRAINER_INPUT_TOKENS_PER_MINUTE") {
+            config.limits.input_tokens_per_minute = Some(itpm.parse()?);
+        }
+
+        // Thresholds
+        if let Ok(warning) = env::var("STRAINER_WARNING_THRESHOLD") {
+            config.thresholds.warning = warning.parse()?;
+        }
+
+        if let Ok(critical) = env::var("STRAINER_CRITICAL_THRESHOLD") {
+            config.thresholds.critical = critical.parse()?;
+        }
+
+        if let Ok(resume) = env::var("STRAINER_RESUME_THRESHOLD") {
+            config.thresholds.resume = resume.parse()?;
+        }
+
+        // Process configuration
+        if let Ok(pause_on_warning) = env::var("STRAINER_PAUSE_ON_WARNING") {
+            config.process.pause_on_warning = pause_on_warning.parse()?;
+        }
+
+        if let Ok(pause_on_critical) = env::var("STRAINER_PAUSE_ON_CRITICAL") {
+            config.process.pause_on_critical = pause_on_critical.parse()?;
+        }
+
+        // Backoff configuration
+        if let Ok(min_backoff) = env::var("STRAINER_MIN_BACKOFF") {
+            config.backoff.min_seconds = min_backoff.parse()?;
+        }
+
+        if let Ok(max_backoff) = env::var("STRAINER_MAX_BACKOFF") {
+            config.backoff.max_seconds = max_backoff.parse()?;
+        }
+
+        // Logging configuration
+        if let Ok(log_level) = env::var("STRAINER_LOG_LEVEL") {
+            config.logging.level = log_level;
+        }
+
+        if let Ok(log_format) = env::var("STRAINER_LOG_FORMAT") {
+            config.logging.format = log_format;
+        }
 
         Ok(config)
     }
@@ -222,6 +264,7 @@ impl Config {
             PathBuf::from("/etc/strainer/config.toml"),
         ];
 
+        // Start with default config
         let mut config = Self::default();
 
         // Load from file if found
@@ -232,7 +275,7 @@ impl Config {
             }
         }
 
-        // Override with environment variables
+        // Load and merge environment variables
         if let Ok(env_config) = Self::from_env() {
             config.merge(env_config);
         }
