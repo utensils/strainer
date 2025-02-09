@@ -89,12 +89,32 @@ jobs:
         with:
           toolchain: stable
         
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: coverage-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
         
+      # Build first to avoid timeouts during coverage
+      - name: Build
+        run: cargo build --features testing
+        
       - name: Generate coverage report
         run: |
-          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80
+          # Run tarpaulin with increased timeout and release mode
+          CARGO_INCREMENTAL=0 RUSTFLAGS='-C instrument-coverage' \
+          cargo tarpaulin --features testing \
+            --timeout 300 \
+            --out Xml \
+            --output-dir coverage \
+            --fail-under 80 \
+            -- --test-threads=1
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
