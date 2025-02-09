@@ -19,8 +19,6 @@ jobs:
         include:
           - os: ubuntu-latest
             name: Linux (x86_64)
-          - os: windows-latest
-            name: Windows (x86_64)
           - os: macos-14
             name: macOS (Apple Silicon)
           - os: macos-latest
