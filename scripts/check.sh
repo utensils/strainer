@@ -9,10 +9,10 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}Running quality checks for Strainer...${NC}\n"
 
-# Check if cargo-tarpaulin is installed
-if ! command -v cargo-tarpaulin &> /dev/null; then
-    echo -e "${RED}cargo-tarpaulin is not installed. Installing...${NC}"
-    cargo install cargo-tarpaulin
+# Check if cargo-tarpaulin is installed and working
+if ! cargo tarpaulin --version &> /dev/null; then
+    echo -e "${BLUE}Installing or updating cargo-tarpaulin...${NC}"
+    cargo install --force cargo-tarpaulin
 fi
 
 # Function to run a command and check its status

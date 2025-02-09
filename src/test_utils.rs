@@ -6,7 +6,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MockProvider {
     pub calls: Arc<Mutex<Vec<String>>>,
     pub responses: Arc<Mutex<HashMap<String, RateLimitInfo>>>,

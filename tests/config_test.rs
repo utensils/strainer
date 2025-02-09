@@ -57,8 +57,40 @@ fn test_config_from_file() -> Result<()> {
     Ok(())
 }
 
+struct EnvGuard {
+    vars: Vec<&'static str>,
+}
+
+impl EnvGuard {
+    fn new(vars: Vec<&'static str>) -> Self {
+        // Clean up any existing values
+        for var in &vars {
+            env::remove_var(var);
+        }
+        Self { vars }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        // Clean up on scope exit
+        for var in &self.vars {
+            env::remove_var(var);
+        }
+    }
+}
+
 #[test]
 fn test_config_from_env() -> Result<()> {
+    let _guard = EnvGuard::new(vec![
+        "STRAINER_API_KEY",
+        "STRAINER_PROVIDER",
+        "STRAINER_BASE_URL",
+        "STRAINER_REQUESTS_PER_MINUTE",
+        "STRAINER_TOKENS_PER_MINUTE",
+    ]);
+
+    // Set test environment variables
     env::set_var("STRAINER_API_KEY", "env-test-key");
     env::set_var("STRAINER_PROVIDER", "anthropic");
     env::set_var("STRAINER_BASE_URL", "https://env.api.com");
@@ -71,13 +103,6 @@ fn test_config_from_env() -> Result<()> {
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
     assert_eq!(config.limits.requests_per_minute, Some(30));
     assert_eq!(config.limits.tokens_per_minute, Some(50_000));
-
-    // Cleanup
-    env::remove_var("STRAINER_API_KEY");
-    env::remove_var("STRAINER_PROVIDER");
-    env::remove_var("STRAINER_BASE_URL");
-    env::remove_var("STRAINER_REQUESTS_PER_MINUTE");
-    env::remove_var("STRAINER_TOKENS_PER_MINUTE");
 
     Ok(())
 }
@@ -140,6 +165,13 @@ fn test_config_validation() {
 
 #[test]
 fn test_load_with_env_override() -> Result<()> {
+    let _guard = EnvGuard::new(vec![
+        "STRAINER_API_KEY",
+        "STRAINER_TOKENS_PER_MINUTE",
+        "STRAINER_BASE_URL",
+        "STRAINER_REQUESTS_PER_MINUTE",
+    ]);
+
     let dir = tempdir()?;
     let config_path = dir.path().join("strainer.toml");
 
@@ -150,7 +182,7 @@ fn test_load_with_env_override() -> Result<()> {
         base_url = "https://file.api.com"
         
         [limits]
-        requests_per_minute = 60
+        requests_per_minute = 30
     "#;
 
     fs::write(&config_path, config_content)?;
@@ -158,6 +190,7 @@ fn test_load_with_env_override() -> Result<()> {
     // Set environment variables
     env::set_var("STRAINER_API_KEY", "env-key");
     env::set_var("STRAINER_TOKENS_PER_MINUTE", "50000");
+    env::set_var("STRAINER_REQUESTS_PER_MINUTE", "60");
 
     // Change to the temporary directory
     let original_dir = env::current_dir()?;
@@ -167,10 +200,6 @@ fn test_load_with_env_override() -> Result<()> {
 
     // Restore original directory
     env::set_current_dir(original_dir)?;
-
-    // Clean up environment
-    env::remove_var("STRAINER_API_KEY");
-    env::remove_var("STRAINER_TOKENS_PER_MINUTE");
 
     assert_eq!(config.api.api_key, Some("env-key".to_string()));
     assert_eq!(

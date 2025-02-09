@@ -2,7 +2,7 @@ use crate::config::ApiConfig;
 use anyhow::Result;
 
 /// Trait defining the interface for rate limit providers
-pub trait Provider {
+pub trait Provider: std::fmt::Debug {
     /// Get the current rate limits from the provider
     /// Get the current rate limits for the API provider
     ///
@@ -41,3 +41,46 @@ pub fn create_provider(config: &ApiConfig) -> Result<Box<dyn Provider>> {
 
 pub mod anthropic;
 pub mod rate_limiter;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_anthropic_provider() {
+        let config = ApiConfig {
+            provider: String::from("anthropic"),
+            api_key: Some("test_key".to_string()),
+            ..Default::default()
+        };
+        let provider = create_provider(&config);
+        assert!(provider.is_ok());
+    }
+
+    #[test]
+    fn test_create_unsupported_provider() {
+        let config = ApiConfig {
+            provider: String::from("unsupported"),
+            ..Default::default()
+        };
+        let provider = create_provider(&config);
+        assert!(provider.is_err());
+        assert_eq!(
+            provider.unwrap_err().to_string(),
+            "Unsupported provider: unsupported"
+        );
+    }
+
+    #[test]
+    fn test_rate_limit_info_debug() {
+        let info = RateLimitInfo {
+            requests_used: 10,
+            tokens_used: 100,
+            input_tokens_used: 50,
+        };
+        let debug_str = format!("{info:?}");
+        assert!(debug_str.contains("requests_used: 10"));
+        assert!(debug_str.contains("tokens_used: 100"));
+        assert!(debug_str.contains("input_tokens_used: 50"));
+    }
+}

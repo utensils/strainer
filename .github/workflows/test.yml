@@ -75,7 +75,7 @@ jobs:
         
       - name: Generate coverage report
         run: |
-          cargo tarpaulin --features testing --out Xml --output-dir coverage
+          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
