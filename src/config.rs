@@ -110,6 +110,7 @@ pub struct ApiConfig {
 }
 
 fn default_api_provider() -> String {
+    // Default to Anthropic as the provider
     "anthropic".to_string()
 }
 fn default_api_base_url() -> String {

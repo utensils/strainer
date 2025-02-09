@@ -1,0 +1,3 @@
+[test]
+# Enable the testing feature in test profile
+rustflags = ["--cfg", "test", "--cfg", "feature=\"testing\""]

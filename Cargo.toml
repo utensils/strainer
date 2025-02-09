@@ -21,6 +21,10 @@ nursery = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
 multiple-crate-versions = "allow"
 
+# Optional features
+[features]
+testing = []  # Feature for exposing testing utilities
+
 # Development dependencies
 [dev-dependencies]
 pretty_assertions = "1.4"
