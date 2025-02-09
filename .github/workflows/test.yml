@@ -21,17 +21,21 @@ jobs:
             name: Linux (x86_64)
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
+            name: Linux (x86_64 musl)
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-latest
             name: Linux (aarch64)
             target: aarch64-unknown-linux-gnu
+          - os: ubuntu-latest
+            name: Linux (aarch64 musl)
+            target: aarch64-unknown-linux-musl
           - os: ubuntu-latest
             name: Linux (armv7)
             target: armv7-unknown-linux-gnueabihf
           - os: macos-14
             name: macOS (Apple Silicon)
-            target: aarch64-apple-darwin
           - os: macos-latest
             name: macOS (Intel x86_64)
-            target: x86_64-apple-darwin
     name: Test ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -44,16 +48,12 @@ jobs:
           components: clippy, rustfmt
           targets: ${{ matrix.target }}
         
-      - name: Install cross-compilation tools
+      - name: Install cross-compilation dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
-          # Add OpenSSL dev packages for cross-compilation
-          sudo apt-get install -y libssl-dev:arm64 libssl-dev:armhf pkg-config
-          # Configure pkg-config for cross-compilation
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/usr/lib/arm-linux-gnueabihf/pkgconfig" >> $GITHUB_ENV
+          sudo apt-get install -y qemu-user
+          cargo install cross
       
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -68,12 +68,30 @@ jobs:
         run: cargo fmt --check
         
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: |
+          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
+            cross clippy --target ${{ matrix.target }} --all-targets --all-features -- -D warnings
+          else
+            cargo clippy --all-targets --all-features -- -D warnings
+          fi
+        
+      - name: Build
+        run: |
+          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
+            cross build --target ${{ matrix.target }} --all-features --release
+          else
+            cargo build --all-features --release
+          fi
+
+      - name: Check binary size
+        if: matrix.target != ''
+        run: |
+          ls -lh target/${{ matrix.target }}/release/strainer || ls -lh target/release/strainer
         
       - name: Run tests
         run: |
-          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "${{ runner.os == 'Linux' && 'x86_64-unknown-linux-gnu' || runner.os == 'macOS' && 'x86_64-apple-darwin' }}" ]; then
-            cargo test --features testing --target ${{ matrix.target }}
+          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
+            cross test --target ${{ matrix.target }} --features testing
           else
             cargo test --features testing
           fi
@@ -94,32 +112,12 @@ jobs:
         with:
           toolchain: stable
         
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: coverage-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
         
-      # Build first to avoid timeouts during coverage
-      - name: Build
-        run: cargo build --features testing
-        
       - name: Generate coverage report
         run: |
-          # Run tarpaulin with increased timeout and release mode
-          CARGO_INCREMENTAL=0 RUSTFLAGS='-C instrument-coverage' \
-          cargo tarpaulin --features testing \
-            --timeout 300 \
-            --out Xml \
-            --output-dir coverage \
-            --fail-under 80 \
-            -- --test-threads=1
+          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 90
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -127,25 +125,25 @@ jobs:
           files: ./coverage/cobertura.xml
           fail_ci_if_error: false
 
-  # docs:
-  #   name: Documentation
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     
-  #     - name: Install Rust
-  #       uses: dtolnay/rust-toolchain@master
-  #       with:
-  #         toolchain: stable
-  #       
-  #     - name: Build documentation
-  #       run: cargo doc --no-deps --all-features
-  #       env:
-  #         RUSTDOCFLAGS: -D warnings
-  #         
-  #     - name: Deploy documentation
-  #       uses: peaceiris/actions-gh-pages@v3
-  #       if: github.ref == 'refs/heads/main'
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: ./target/doc
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+        
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+          
+      - name: Deploy documentation
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
