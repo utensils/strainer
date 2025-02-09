@@ -1,5 +1,7 @@
 # Strainer
 
+[![codecov](https://codecov.io/gh/utensils/strainer/branch/main/graph/badge.svg)](https://codecov.io/gh/utensils/strainer)
+
 A rate limiting and spend management tool for AI APIs.
 
 ## Features
