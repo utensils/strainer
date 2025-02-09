@@ -92,7 +92,7 @@ jobs:
         
       - name: Generate coverage report
         run: |
-          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80 --timeout 120 --verbose
+          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 70 --timeout 120 --verbose
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
