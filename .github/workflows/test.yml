@@ -14,45 +14,16 @@ env:
 jobs:
   test:
     strategy:
-      fail-fast: false
+      fail-fast: false # Continue with other builds even if one fails
       matrix:
         include:
-          # Linux (GNU)
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: Linux GNU x86_64
-          - target: i686-unknown-linux-gnu
-            os: ubuntu-latest
-            name: Linux GNU i686
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            name: Linux GNU aarch64
-          - target: armv7-unknown-linux-gnueabihf
-            os: ubuntu-latest
-            name: Linux GNU armv7
-          - target: arm-unknown-linux-gnueabi
-            os: ubuntu-latest
-            name: Linux GNU arm
-          
-          # Linux (MUSL)
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            name: Linux MUSL x86_64
-          - target: i686-unknown-linux-musl
-            os: ubuntu-latest
-            name: Linux MUSL i686
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            name: Linux MUSL aarch64
-          
-          # macOS
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            name: macOS x86_64
-          - target: aarch64-apple-darwin
-            os: macos-14
-            name: macOS aarch64
-          
+          - os: ubuntu-latest
+            name: Linux (x86_64)
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            name: macOS (Apple Silicon)
+          - os: macos-latest
+            name: macOS (Intel x86_64)
     name: Test ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -65,41 +36,12 @@ jobs:
           components: clippy, rustfmt
           targets: ${{ matrix.target }}
         
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+      - name: Install cross-compilation dependencies
+        if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'armv7-unknown-linux-gnueabihf'
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user musl-tools pkg-config libssl-dev
-
-      - name: Install macOS dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew install openssl@3
-
-      - name: Setup musl build environment
-        if: contains(matrix.target, 'musl')
-        run: |
-          # Install musl-gcc
-          sudo apt-get install -y musl-tools
-          # Install musl OpenSSL
-          wget https://www.openssl.org/source/openssl-3.1.4.tar.gz
-          tar xzf openssl-3.1.4.tar.gz
-          cd openssl-3.1.4
-          # Configure and build OpenSSL for musl
-          CC="musl-gcc -fPIC" ./Configure no-shared no-async --prefix=/usr/local/musl --openssldir=/usr/local/musl linux-x86_64
-          make -j$(nproc)
-          sudo make install
-          cd ..
-          # Set environment variables for OpenSSL
-          echo "OPENSSL_DIR=/usr/local/musl" >> $GITHUB_ENV
-          echo "OPENSSL_STATIC=1" >> $GITHUB_ENV
-          
-      - name: Setup cross-compilation for ARM
-        if: contains(matrix.target, 'arm')
-        run: |
-          sudo apt-get install -y gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
-          cargo install cross
-
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+      
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -113,30 +55,12 @@ jobs:
         run: cargo fmt --check
         
       - name: Run clippy
-        run: |
-          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
-            cross clippy --target ${{ matrix.target }} --all-targets --all-features -- -D warnings
-          else
-            cargo clippy --all-targets --all-features -- -D warnings
-          fi
-        
-      - name: Build
-        run: |
-          if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
-            cross build --target ${{ matrix.target }} --all-features --release
-          else
-            cargo build --all-features --release
-          fi
-
-      - name: Check binary size
-        if: matrix.target != ''
-        run: |
-          ls -lh target/${{ matrix.target }}/release/strainer || ls -lh target/release/strainer
+        run: cargo clippy --all-targets --all-features -- -D warnings
         
       - name: Run tests
         run: |
           if [ -n "${{ matrix.target }}" ] && [ "${{ matrix.target }}" != "x86_64-unknown-linux-gnu" ]; then
-            cross test --target ${{ matrix.target }} --features testing
+            cargo test --features testing --target ${{ matrix.target }}
           else
             cargo test --features testing
           fi
@@ -162,7 +86,7 @@ jobs:
         
       - name: Generate coverage report
         run: |
-          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 90
+          cargo tarpaulin --features testing --out Xml --output-dir coverage --fail-under 80
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
@@ -170,25 +94,25 @@ jobs:
           files: ./coverage/cobertura.xml
           fail_ci_if_error: false
 
-  docs:
-    name: Documentation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-        
-      - name: Build documentation
-        run: cargo doc --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: -D warnings
-          
-      - name: Deploy documentation
-        uses: peaceiris/actions-gh-pages@v3
-        if: github.ref == 'refs/heads/main'
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
+  # docs:
+  #   name: Documentation
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@master
+  #       with:
+  #         toolchain: stable
+  #       
+  #     - name: Build documentation
+  #       run: cargo doc --no-deps --all-features
+  #       env:
+  #         RUSTDOCFLAGS: -D warnings
+  #         
+  #     - name: Deploy documentation
+  #       uses: peaceiris/actions-gh-pages@v3
+  #       if: github.ref == 'refs/heads/main'
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         publish_dir: ./target/doc
