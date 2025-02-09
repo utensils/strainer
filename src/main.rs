@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { command, .. } => run_command(command, final_config).await,
-        Commands::Watch { pid: _pid, .. } => watch_process(final_config).await,
+        Commands::Watch { pid: _pid, .. } => watch_process(final_config),
     }
 }
 
@@ -122,7 +122,7 @@ async fn run_command(command: Vec<String>, config: Config) -> Result<()> {
     }
 }
 
-async fn watch_process(_config: Config) -> Result<()> {
+fn watch_process(_config: Config) -> Result<()> {
     // TODO: Implement watch process command
     todo!("Watch process not yet implemented")
 }

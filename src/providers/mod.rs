@@ -2,7 +2,7 @@ use crate::config::ApiConfig;
 use anyhow::Result;
 
 /// Trait defining the interface for rate limit providers
-pub trait Provider: std::fmt::Debug + std::any::Any {
+pub trait Provider: std::fmt::Debug + std::any::Any + Send + Sync {
     /// Get the current rate limits from the provider
     /// Get the current rate limits for the API provider
     ///

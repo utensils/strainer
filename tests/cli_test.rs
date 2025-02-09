@@ -20,7 +20,7 @@ async fn test_run_command_basic() -> Result<()> {
         ])
         .output()?;
 
-    assert!(output.status.success(), "Command failed: {:?}", output);
+    assert!(output.status.success(), "Command failed: {output:?}");
     Ok(())
 }
 
@@ -51,7 +51,7 @@ async fn test_run_command_rate_limits() -> Result<()> {
         ])
         .output()?;
 
-    assert!(output.status.success(), "Command failed: {:?}", output);
+    assert!(output.status.success(), "Command failed: {output:?}");
     Ok(())
 }
 
