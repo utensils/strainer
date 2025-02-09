@@ -15,6 +15,7 @@ pub struct MockProvider {
 
 impl MockProvider {
     #[must_use]
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> Box<dyn Provider> {
         Box::new(Self {
             calls: Arc::new(Mutex::new(Vec::new())),

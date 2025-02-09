@@ -62,7 +62,7 @@ struct EnvGuard {
 }
 
 impl EnvGuard {
-    fn new(vars: Vec<&'static str>) -> Self {
+    const fn new(vars: Vec<&'static str>) -> Self {
         Self { vars }
     }
 }

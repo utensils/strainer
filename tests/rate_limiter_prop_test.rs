@@ -51,7 +51,9 @@ mod prop_tests {
             max_backoff in 31..120u32,
         ) {
             let provider = MockProvider::new();
-            provider.set_response(RateLimitInfo {
+            let mock_provider = provider.as_any().downcast_ref::<MockProvider>().unwrap();
+
+            mock_provider.set_response(RateLimitInfo {
                 requests_used: requests,
                 tokens_used: tokens,
                 input_tokens_used: input_tokens,

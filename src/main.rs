@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use std::collections::HashMap;
 use strainer::config::Config;
 use strainer::providers;
 use strainer::providers::rate_limiter::RateLimiter;
@@ -65,7 +66,7 @@ async fn main() -> Result<()> {
             provider: cli.command.api().to_string(),
             api_key: cli.command.api_key(),
             base_url: Some(cli.command.api_base_url().to_string()),
-            provider_specific: Default::default(),
+            provider_specific: HashMap::default(),
         },
         ..Default::default()
     };

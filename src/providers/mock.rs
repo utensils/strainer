@@ -12,7 +12,12 @@ pub struct MockProvider {
 
 impl MockProvider {
     /// Create a new mock provider with initial usage values
-    pub fn new(_config: &ApiConfig) -> Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// This implementation never returns an error, but the Result type is used
+    /// to maintain consistency with the Provider trait requirements.
+    pub const fn new(_config: &ApiConfig) -> Result<Self> {
         // For testing, we don't require API key validation
         Ok(Self {
             requests_used: 0,

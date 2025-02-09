@@ -45,9 +45,10 @@ mod integration_tests {
     #[test]
     fn test_rate_limiter_integration() {
         let provider = MockProvider::new();
+        let mock_provider = provider.as_any().downcast_ref::<MockProvider>().unwrap();
 
         // Set up test response
-        provider.set_response(strainer::RateLimitInfo {
+        mock_provider.set_response(strainer::RateLimitInfo {
             requests_used: 10,
             tokens_used: 100,
             input_tokens_used: 50,

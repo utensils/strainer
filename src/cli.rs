@@ -147,128 +147,123 @@ pub enum Commands {
 }
 
 impl Commands {
-    pub fn requests_per_minute(&self) -> Option<u32> {
+    pub const fn requests_per_minute(&self) -> Option<u32> {
         match self {
-            Commands::Run {
+            Self::Run {
+                requests_per_minute,
+                ..
+            }
+            | Self::Watch {
                 requests_per_minute,
                 ..
             } => *requests_per_minute,
-            Commands::Watch {
-                requests_per_minute,
-                ..
-            } => *requests_per_minute,
         }
     }
 
-    pub fn tokens_per_minute(&self) -> Option<u32> {
+    pub const fn tokens_per_minute(&self) -> Option<u32> {
         match self {
-            Commands::Run {
+            Self::Run {
                 tokens_per_minute, ..
-            } => *tokens_per_minute,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 tokens_per_minute, ..
             } => *tokens_per_minute,
         }
     }
 
-    pub fn input_tokens_per_minute(&self) -> Option<u32> {
+    pub const fn input_tokens_per_minute(&self) -> Option<u32> {
         match self {
-            Commands::Run {
+            Self::Run {
                 input_tokens_per_minute,
                 ..
-            } => *input_tokens_per_minute,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 input_tokens_per_minute,
                 ..
             } => *input_tokens_per_minute,
         }
     }
 
-    pub fn warning_threshold(&self) -> u8 {
+    pub const fn warning_threshold(&self) -> u8 {
         match self {
-            Commands::Run {
+            Self::Run {
+                warning_threshold, ..
+            }
+            | Self::Watch {
                 warning_threshold, ..
             } => *warning_threshold,
-            Commands::Watch {
-                warning_threshold, ..
-            } => *warning_threshold,
         }
     }
 
-    pub fn critical_threshold(&self) -> u8 {
+    pub const fn critical_threshold(&self) -> u8 {
         match self {
-            Commands::Run {
+            Self::Run {
                 critical_threshold, ..
-            } => *critical_threshold,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 critical_threshold, ..
             } => *critical_threshold,
         }
     }
 
-    pub fn resume_threshold(&self) -> u8 {
+    pub const fn resume_threshold(&self) -> u8 {
         match self {
-            Commands::Run {
+            Self::Run {
                 resume_threshold, ..
-            } => *resume_threshold,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 resume_threshold, ..
             } => *resume_threshold,
         }
     }
 
-    pub fn min_backoff(&self) -> u32 {
+    pub const fn min_backoff(&self) -> u32 {
         match self {
-            Commands::Run { min_backoff, .. } => *min_backoff,
-            Commands::Watch { min_backoff, .. } => *min_backoff,
+            Self::Run { min_backoff, .. } | Self::Watch { min_backoff, .. } => *min_backoff,
         }
     }
 
-    pub fn max_backoff(&self) -> u32 {
+    pub const fn max_backoff(&self) -> u32 {
         match self {
-            Commands::Run { max_backoff, .. } => *max_backoff,
-            Commands::Watch { max_backoff, .. } => *max_backoff,
+            Self::Run { max_backoff, .. } | Self::Watch { max_backoff, .. } => *max_backoff,
         }
     }
 
     pub fn api(&self) -> &str {
         match self {
-            Commands::Run { api, .. } => api,
-            Commands::Watch { api, .. } => api,
+            Self::Run { api, .. } | Self::Watch { api, .. } => api,
         }
     }
 
     pub fn api_key(&self) -> Option<String> {
         match self {
-            Commands::Run { api_key, .. } => api_key.clone(),
-            Commands::Watch { api_key, .. } => api_key.clone(),
+            Self::Run { api_key, .. } | Self::Watch { api_key, .. } => api_key.clone(),
         }
     }
 
     pub fn api_base_url(&self) -> &str {
         match self {
-            Commands::Run { api_base_url, .. } => api_base_url,
-            Commands::Watch { api_base_url, .. } => api_base_url,
+            Self::Run { api_base_url, .. } | Self::Watch { api_base_url, .. } => api_base_url,
         }
     }
 
-    pub fn pause_on_warning(&self) -> bool {
+    pub const fn pause_on_warning(&self) -> bool {
         match self {
-            Commands::Run {
+            Self::Run {
                 pause_on_warning, ..
-            } => *pause_on_warning,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 pause_on_warning, ..
             } => *pause_on_warning,
         }
     }
 
-    pub fn pause_on_critical(&self) -> bool {
+    pub const fn pause_on_critical(&self) -> bool {
         match self {
-            Commands::Run {
+            Self::Run {
                 pause_on_critical, ..
-            } => *pause_on_critical,
-            Commands::Watch {
+            }
+            | Self::Watch {
                 pause_on_critical, ..
             } => *pause_on_critical,
         }
