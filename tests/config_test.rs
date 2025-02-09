@@ -128,6 +128,19 @@ fn test_config_from_env() -> Result<()> {
     // Test 1: Direct environment config
     let env_config = Config::from_env()?;
 
+    // Debug Prints
+    println!("API Key: {:?}", env_config.api.api_key);
+    println!("Provider: {:?}", env_config.api.provider);
+    println!("Base URL: {:?}", env_config.api.base_url);
+    println!(
+        "Requests per Minute: {:?}",
+        env_config.limits.requests_per_minute
+    );
+    println!(
+        "Tokens per Minute: {:?}",
+        env_config.limits.tokens_per_minute
+    );
+
     // Verify direct environment values
     assert_eq!(env_config.api.api_key, Some("env-key".to_string()));
     assert_eq!(env_config.api.provider, "anthropic");
