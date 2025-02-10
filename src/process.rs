@@ -106,8 +106,9 @@ mod tests {
 
     #[test]
     fn test_invalid_process() {
-        // Using a very large PID that's unlikely to exist
-        let controller = ProcessController::new(999_999);
+        // Using maximum possible PID value which is guaranteed to be invalid
+        // as it exceeds system limits on all Unix platforms
+        let controller = ProcessController::new(i32::MAX);
         assert!(!controller.is_running());
         assert!(controller.pause().is_err());
         assert!(controller.resume().is_err());
