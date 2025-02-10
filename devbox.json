@@ -2,7 +2,9 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.13.7/.schema/devbox.schema.json",
   "packages": [
     "rustup@1.27.1",
-    "libiconv@2.40"
+    "libiconv@2.40",
+    "pkg-config@latest",
+    "openssl.dev"
   ],
   "shell": {
     "init_hook": [
