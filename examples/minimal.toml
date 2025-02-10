@@ -1,0 +1,12 @@
+# Minimal configuration example
+# Only required fields are specified
+
+[provider]
+name = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"
+
+# Only limit requests, ignore token counts
+[limits]
+requests_per_minute = 100
+
+# Use default thresholds and backoff settings

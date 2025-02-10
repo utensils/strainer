@@ -26,6 +26,21 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Initialize configuration file
+    Init {
+        /// Path to create the config file
+        #[arg(long)]
+        config: Option<PathBuf>,
+        
+        /// Don't prompt for input, use defaults
+        #[arg(long)]
+        no_prompt: bool,
+        
+        /// Force overwrite if config file exists
+        #[arg(long)]
+        force: bool,
+    },
+
     /// Run a command with rate limiting
     Run {
         /// Maximum requests per minute

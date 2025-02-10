@@ -10,6 +10,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use crate::cli::{Cli, Commands};
 
 mod cli;
+mod init;
 mod process;
 
 #[tokio::main]
@@ -30,6 +31,16 @@ async fn main() -> Result<()> {
         subscriber.json().init();
     } else {
         subscriber.init();
+    }
+
+    // Handle init command early as it doesn't need config loading
+    if let Commands::Init { config, no_prompt, force } = cli.command {
+        return init::initialize_config(init::InitOptions {
+            config_path: config,
+            no_prompt,
+            force,
+        })
+        .await;
     }
 
     // Load configuration from file and CLI args
@@ -77,6 +88,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Run { command, .. } => run_command(command, final_config).await,
         Commands::Watch { pid: _pid, .. } => watch_process(final_config),
+        Commands::Init { .. } => unreachable!(), // Already handled above
     }
 }
 

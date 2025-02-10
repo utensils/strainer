@@ -1,0 +1,30 @@
+# Example configuration for Anthropic API usage
+# Save this as config.toml and run with: strainer --config config.toml
+
+# Provider Configuration
+[provider]
+name = "anthropic"
+api_key = "${ANTHROPIC_API_KEY}"  # Set your API key in environment
+base_url = "https://api.anthropic.com/v1"
+
+# Rate Limits - Configured for typical Anthropic limits
+[limits]
+requests_per_minute = 100
+tokens_per_minute = 100000
+input_tokens_per_minute = 50000
+
+# Conservative thresholds to avoid hitting limits
+[thresholds]
+warning = 30    # Start warning at 30% usage
+critical = 50   # Stop at 50% usage
+resume = 25     # Resume when usage drops to 25%
+
+# Backoff Configuration
+[backoff]
+min_seconds = 5   # Start with 5 second delays
+max_seconds = 60  # Max out at 1 minute delays
+
+# Optional Budget Controls
+[budget]
+daily_limit = 100.00     # $100 daily limit
+monthly_limit = 2000.00  # $2000 monthly limit
