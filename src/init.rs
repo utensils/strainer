@@ -218,3 +218,140 @@ async fn create_interactive_config() -> Result<Config> {
 
     Ok(config)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use tempfile::tempdir;
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    #[tokio::test]
+    async fn test_anthropic_api_success() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .and(header("x-api-key", "test-key"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "test",
+                "content": "Hello"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = test_anthropic_api("test-key", &mock_server.uri()).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_api_failure() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/messages"))
+            .and(header("x-api-key", "invalid-key"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Invalid API key"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let result = test_anthropic_api("invalid-key", &mock_server.uri()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("API test failed"));
+    }
+
+    #[tokio::test]
+    async fn test_initialize_config_non_interactive() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        env::set_var("STRAINER_API_KEY", "test-key");
+        env::set_var("STRAINER_MODEL", "test-model");
+
+        let result = initialize_config(InitOptions {
+            config_path: Some(config_path.clone()),
+            no_prompt: true,
+            force: false,
+        })
+        .await;
+
+        assert!(result.is_ok());
+        assert!(config_path.exists());
+
+        let config_content = std::fs::read_to_string(config_path).unwrap();
+        assert!(config_content.contains("${STRAINER_API_KEY}"));
+        assert!(config_content.contains("test-model"));
+
+        env::remove_var("STRAINER_API_KEY");
+        env::remove_var("STRAINER_MODEL");
+    }
+
+    #[tokio::test]
+    async fn test_initialize_config_force_overwrite() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Create initial config
+        std::fs::write(&config_path, "test").unwrap();
+
+        let result = initialize_config(InitOptions {
+            config_path: Some(config_path.clone()),
+            no_prompt: true,
+            force: true,
+        })
+        .await;
+
+        assert!(result.is_ok());
+        assert!(config_path.exists());
+        assert_ne!(std::fs::read_to_string(config_path).unwrap(), "test");
+    }
+
+    #[tokio::test]
+    async fn test_initialize_config_existing_no_force() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Create initial config
+        std::fs::write(&config_path, "test").unwrap();
+
+        let result = initialize_config(InitOptions {
+            config_path: Some(config_path),
+            no_prompt: true,
+            force: false,
+        })
+        .await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Config file already exists"));
+    }
+
+    #[test]
+    fn test_create_non_interactive_config() {
+        env::set_var("STRAINER_API_KEY", "test-key");
+        env::set_var("STRAINER_MODEL", "test-model");
+
+        let config = create_non_interactive_config();
+
+        assert_eq!(config.api.api_key, Some("${STRAINER_API_KEY}".to_string()));
+        assert_eq!(
+            config
+                .api
+                .provider_specific
+                .get("model")
+                .and_then(|v| v.as_str()),
+            Some("test-model")
+        );
+
+        env::remove_var("STRAINER_API_KEY");
+        env::remove_var("STRAINER_MODEL");
+    }
+}

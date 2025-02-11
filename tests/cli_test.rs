@@ -33,9 +33,12 @@ async fn run_strainer_command(
     test_dir: &tempfile::TempDir,
 ) -> Result<std::process::Output> {
     // Get the absolute path to the binary
-    let binary_path = env::current_dir()?
-        .join("target/debug/strainer")
-        .canonicalize()?;
+    let current_dir = env::current_dir()?;
+    eprintln!("Current directory: {current_dir:?}");
+    let binary_path = current_dir.join("target/debug/strainer");
+    eprintln!("Looking for binary at: {binary_path:?}");
+    let binary_path = binary_path.canonicalize()?;
+    eprintln!("Canonicalized binary path: {binary_path:?}");
 
     let mut cmd = TokioCommand::new(binary_path);
     cmd.args(args);
@@ -117,6 +120,13 @@ async fn test_run_command_rate_limits() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_run_command_process_control() -> anyhow::Result<()> {
     let test_dir = tempdir()?;
+
+    // Create a test binary that will run indefinitely
+    let test_binary = create_test_binary(test_dir.path())?;
+
+    // Ensure the file is properly created before trying to execute it
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     let mut child = spawn_strainer_command(
         &[
             "run",
@@ -125,21 +135,39 @@ async fn test_run_command_process_control() -> anyhow::Result<()> {
             "--api",
             "mock",
             "--",
-            "echo",
-            "process_control",
+            test_binary.to_str().unwrap(),
         ],
         &test_dir,
     )?;
 
     // Give it a short time to start
-    sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Kill the process
     child.kill().await?;
     let status = child.wait().await?;
 
-    // Process should have been killed, so exit status is non-success
-    assert!(!status.success());
+    // On Unix systems, when a process is killed, it typically exits with a signal status
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert!(
+            status.signal().is_some(),
+            "Process should have been killed by a signal"
+        );
+    }
+
+    #[cfg(not(unix))]
+    {
+        assert!(
+            !status.success(),
+            "Process should not have exited successfully"
+        );
+    }
+
+    // Give the system a moment to fully clean up
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     Ok(())
 }
 
@@ -162,16 +190,23 @@ async fn test_watch_command() -> anyhow::Result<()> {
     // Create a temporary directory for our test processes
     let test_dir = tempdir()?;
 
-    // Create and start our test process
+    // Create our test binary
     let test_binary = create_test_binary(test_dir.path())?;
+
+    // Ensure the file is properly created before trying to execute it
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Start our test process
     let mut child = tokio::process::Command::new(&test_binary)
         .current_dir(test_dir.path())
         .spawn()?;
+
     let pid = child.id().expect("Failed to get process ID");
 
     // Give the process a moment to start
-    sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
+    // Run the watch command
     let output = run_strainer_command(
         &[
             "watch",
@@ -194,5 +229,10 @@ async fn test_watch_command() -> anyhow::Result<()> {
 
     // Clean up our test process
     child.kill().await?;
+    child.wait().await?;
+
+    // Give the system a moment to fully clean up
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     Ok(())
 }

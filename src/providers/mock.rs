@@ -47,3 +47,50 @@ impl Provider for MockProvider {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mock_provider_new() {
+        let config = ApiConfig {
+            provider: "mock".to_string(),
+            api_key: None,
+            base_url: None,
+            provider_specific: std::collections::HashMap::default(),
+        };
+        let provider = MockProvider::new(&config).unwrap();
+        assert_eq!(provider.requests_used, 0);
+        assert_eq!(provider.tokens_used, 0);
+        assert_eq!(provider.input_tokens_used, 0);
+    }
+
+    #[test]
+    fn test_mock_provider_set_usage() {
+        let config = ApiConfig::default();
+        let mut provider = MockProvider::new(&config).unwrap();
+        provider.set_usage(10, 100, 50);
+        assert_eq!(provider.requests_used, 10);
+        assert_eq!(provider.tokens_used, 100);
+        assert_eq!(provider.input_tokens_used, 50);
+    }
+
+    #[test]
+    fn test_mock_provider_get_rate_limits() {
+        let config = ApiConfig::default();
+        let mut provider = MockProvider::new(&config).unwrap();
+        provider.set_usage(10, 100, 50);
+        let limits = provider.get_rate_limits().unwrap();
+        assert_eq!(limits.requests_used, 10);
+        assert_eq!(limits.tokens_used, 100);
+        assert_eq!(limits.input_tokens_used, 50);
+    }
+
+    #[test]
+    fn test_mock_provider_as_any() {
+        let config = ApiConfig::default();
+        let provider = MockProvider::new(&config).unwrap();
+        let _: &MockProvider = provider.as_any().downcast_ref().unwrap();
+    }
+}

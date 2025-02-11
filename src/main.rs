@@ -152,3 +152,134 @@ fn watch_process(pid: u32, _config: Config) -> Result<()> {
         anyhow::bail!("Process {} is not running", pid);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_run_command_empty() {
+        let result = run_command(vec![], Config::default()).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No command specified"));
+    }
+
+    #[tokio::test]
+    async fn test_run_command_success() {
+        let mut config = Config::default();
+        config.api.provider = "mock".to_string();
+
+        let result = run_command(vec!["true".to_string()], config).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_run_command_failure() {
+        let mut config = Config::default();
+        config.api.provider = "mock".to_string();
+
+        let result = run_command(vec!["false".to_string()], config).await;
+        assert!(result.is_ok()); // The command runs successfully but exits with non-zero
+    }
+
+    #[tokio::test]
+    async fn test_run_command_with_rate_limits() {
+        let mut config = Config::default();
+        config.api.provider = "mock".to_string();
+        config.limits.requests_per_minute = Some(1);
+        config.thresholds.critical = 50;
+        config.process.pause_on_critical = true;
+        config.backoff.min_seconds = 1;
+        config.backoff.max_seconds = 2;
+
+        // Start a long-running process that we can control
+        let mut child = Command::new("sleep")
+            .arg("10")
+            .spawn()
+            .expect("Failed to start sleep command");
+
+        // Run the command in a separate task so we can kill it after our test
+        let config_clone = config.clone();
+        let handle = tokio::spawn(async move {
+            run_command(vec!["sleep".to_string(), "10".to_string()], config_clone).await
+        });
+
+        // Give it some time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Kill the process
+        child.kill().expect("Failed to kill process");
+        let _ = child.wait();
+
+        // Wait for our command to finish
+        let result = handle.await.expect("Task panicked");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_watch_process_not_running() {
+        let result = watch_process(1, Config::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not running"));
+    }
+
+    #[test]
+    fn test_watch_process_running() {
+        let child = Command::new("sleep")
+            .arg("1")
+            .spawn()
+            .expect("Failed to start sleep command");
+
+        let result = watch_process(child.id(), Config::default());
+        assert!(result.is_ok());
+
+        let _ = child.wait_with_output();
+    }
+
+    #[tokio::test]
+    async fn test_main_init_command() {
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let args = vec![
+            "strainer",
+            "init",
+            "--config",
+            config_path.to_str().unwrap(),
+            "--no-prompt",
+            "--force",
+        ];
+
+        let result = Cli::try_parse_from(args).map(|cli| cli.command);
+        assert!(matches!(
+            result.unwrap(),
+            Commands::Init {
+                config: Some(_),
+                no_prompt: true,
+                force: true
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_main_run_command() {
+        let args = vec!["strainer", "run", "--", "true"];
+
+        let result = Cli::try_parse_from(args).map(|cli| cli.command);
+        assert!(matches!(result.unwrap(), Commands::Run { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_main_watch_command() {
+        let args = vec!["strainer", "watch", "--pid", "1234"];
+
+        let result = Cli::try_parse_from(args).map(|cli| cli.command);
+        assert!(matches!(result.unwrap(), Commands::Watch { pid: 1234, .. }));
+    }
+}

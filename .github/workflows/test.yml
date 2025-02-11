@@ -101,9 +101,12 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
         
+      - name: Build project
+        run: cargo build --features testing
+        
       - name: Generate coverage report
         continue-on-error: true
-        run: cargo tarpaulin --features testing --out Xml --output-dir coverage
+        run: cargo tarpaulin --features testing --out Xml --output-dir coverage --verbose
           
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

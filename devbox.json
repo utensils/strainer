@@ -4,16 +4,31 @@
     "rustup@1.27.1",
     "libiconv@2.40",
     "pkg-config@latest",
-    "openssl.dev"
+    "openssl.dev",
+    "glibc@2.39",
+    "gcc@13.2.0",
+    "binutils@latest"
   ],
   "shell": {
     "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
+      "echo 'Welcome to devbox!' > /dev/null",
+      "rustup default stable",
+      "rustup target add x86_64-unknown-linux-gnu"
     ],
     "scripts": {
       "test": [
         "echo \"Error: no test specified\" && exit 1"
       ]
     }
+  },
+  "env": {
+    "LIBRARY_PATH": "${LIBRARY_PATH:+${LIBRARY_PATH}:}${pkgs.glibc}/lib",
+    "LD_LIBRARY_PATH": "${LD_LIBRARY_PATH:+${LD_LIBRARY_PATH}:}${pkgs.glibc}/lib",
+    "RUSTFLAGS": "-C target-cpu=native -C debuginfo=2 -C force-frame-pointers=yes",
+    "RUST_BACKTRACE": "1",
+    "CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG": "true",
+    "CARGO_BUILD_TARGET": "x86_64-unknown-linux-gnu",
+    "CC": "gcc",
+    "CXX": "g++"
   }
 }

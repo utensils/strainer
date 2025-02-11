@@ -38,6 +38,6 @@ run_check "cargo clippy --all-targets --all-features -- -D warnings" "Clippy" ||
 run_check "cargo test --all-targets --all-features" "Tests" || exit 1
 
 echo -e "${BLUE}Running code coverage...${NC}"
-cargo tarpaulin --all-features --out Xml --output-dir coverage
+cargo tarpaulin --config tarpaulin.toml --out Xml --output-dir coverage
 
 echo -e "\n${GREEN}All checks completed successfully!${NC}"

@@ -1,0 +1,7 @@
+[all]
+# Include all tests in coverage reporting
+all-features = true
+# Include integration tests
+run-types = ["Tests"]
+# Set coverage target
+coverage-threshold = 90 
