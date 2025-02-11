@@ -26,16 +26,16 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize configuration file
+    /// Initialize a new configuration
     Init {
         /// Path to create the config file
         #[arg(long)]
         config: Option<PathBuf>,
-        
+
         /// Don't prompt for input, use defaults
         #[arg(long)]
         no_prompt: bool,
-        
+
         /// Force overwrite if config file exists
         #[arg(long)]
         force: bool,
@@ -172,6 +172,7 @@ impl Commands {
                 requests_per_minute,
                 ..
             } => *requests_per_minute,
+            Self::Init { .. } => None,
         }
     }
 
@@ -183,6 +184,7 @@ impl Commands {
             | Self::Watch {
                 tokens_per_minute, ..
             } => *tokens_per_minute,
+            Self::Init { .. } => None,
         }
     }
 
@@ -196,6 +198,7 @@ impl Commands {
                 input_tokens_per_minute,
                 ..
             } => *input_tokens_per_minute,
+            Self::Init { .. } => None,
         }
     }
 
@@ -207,6 +210,7 @@ impl Commands {
             | Self::Watch {
                 warning_threshold, ..
             } => *warning_threshold,
+            Self::Init { .. } => 30, // Default value
         }
     }
 
@@ -218,6 +222,7 @@ impl Commands {
             | Self::Watch {
                 critical_threshold, ..
             } => *critical_threshold,
+            Self::Init { .. } => 50, // Default value
         }
     }
 
@@ -229,36 +234,42 @@ impl Commands {
             | Self::Watch {
                 resume_threshold, ..
             } => *resume_threshold,
+            Self::Init { .. } => 25, // Default value
         }
     }
 
     pub const fn min_backoff(&self) -> u32 {
         match self {
             Self::Run { min_backoff, .. } | Self::Watch { min_backoff, .. } => *min_backoff,
+            Self::Init { .. } => 5, // Default value
         }
     }
 
     pub const fn max_backoff(&self) -> u32 {
         match self {
             Self::Run { max_backoff, .. } | Self::Watch { max_backoff, .. } => *max_backoff,
+            Self::Init { .. } => 60, // Default value
         }
     }
 
     pub fn api(&self) -> &str {
         match self {
             Self::Run { api, .. } | Self::Watch { api, .. } => api,
+            Self::Init { .. } => "anthropic", // Default value
         }
     }
 
     pub fn api_key(&self) -> Option<String> {
         match self {
             Self::Run { api_key, .. } | Self::Watch { api_key, .. } => api_key.clone(),
+            Self::Init { .. } => None,
         }
     }
 
     pub fn api_base_url(&self) -> &str {
         match self {
             Self::Run { api_base_url, .. } | Self::Watch { api_base_url, .. } => api_base_url,
+            Self::Init { .. } => "https://api.anthropic.com/v1", // Default value
         }
     }
 
@@ -270,6 +281,7 @@ impl Commands {
             | Self::Watch {
                 pause_on_warning, ..
             } => *pause_on_warning,
+            Self::Init { .. } => false, // Default value
         }
     }
 
@@ -281,6 +293,7 @@ impl Commands {
             | Self::Watch {
                 pause_on_critical, ..
             } => *pause_on_critical,
+            Self::Init { .. } => true, // Default value
         }
     }
 }

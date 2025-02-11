@@ -34,7 +34,12 @@ async fn main() -> Result<()> {
     }
 
     // Handle init command early as it doesn't need config loading
-    if let Commands::Init { config, no_prompt, force } = cli.command {
+    if let Commands::Init {
+        config,
+        no_prompt,
+        force,
+    } = cli.command
+    {
         return init::initialize_config(init::InitOptions {
             config_path: config,
             no_prompt,

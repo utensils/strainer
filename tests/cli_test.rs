@@ -1,13 +1,21 @@
 use anyhow::Result;
 use std::env;
 use std::time::Duration;
+use tempfile::tempdir;
 use tokio::process::Command as TokioCommand;
 use tokio::time::sleep;
 
 // Helper function to run the command to avoid rebuilding for each test
 async fn run_strainer_command(args: &[&str]) -> Result<std::process::Output> {
-    // Use the debug build path
-    let binary_path = env::current_dir()?.join("target/debug/strainer");
+    // Get the absolute path to the binary
+    let binary_path = env::current_dir()?
+        .join("target/debug/strainer")
+        .canonicalize()?;
+
+    // Create a temporary directory for the test
+    let test_dir = tempdir()?;
+    env::set_current_dir(test_dir.path())?;
+
     Ok(TokioCommand::new(binary_path).args(args).output().await?)
 }
 

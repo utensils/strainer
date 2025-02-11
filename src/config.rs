@@ -107,7 +107,6 @@ pub struct ApiConfig {
     #[serde(default = "default_api_provider")]
     pub provider: String,
     pub api_key: Option<String>,
-    #[serde(default = "default_api_base_url")]
     pub base_url: Option<String>,
     #[serde(default)]
     pub provider_specific: HashMap<String, Value>,
@@ -117,17 +116,22 @@ fn default_api_provider() -> String {
     // Default to Anthropic as the provider
     "anthropic".to_string()
 }
-#[allow(clippy::unnecessary_wraps)]
-fn default_api_base_url() -> Option<String> {
-    Some("https://api.anthropic.com/v1".to_string())
+impl ApiConfig {
+    fn default_base_url(provider: &str) -> Option<String> {
+        match provider {
+            "anthropic" => Some("https://api.anthropic.com/v1".to_string()),
+            _ => None,
+        }
+    }
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
+        let provider = default_api_provider();
         Self {
-            provider: default_api_provider(),
+            provider: provider.clone(),
             api_key: None,
-            base_url: None,
+            base_url: Self::default_base_url(&provider),
             provider_specific: HashMap::new(),
         }
     }
@@ -178,22 +182,31 @@ impl Config {
     /// This function will return an error if:
     /// - Environment variables contain invalid values
     pub fn from_env() -> Result<Self> {
+        // Start with default config
         let mut config = Self::default();
 
-        // API configuration
-        if let Ok(api_key) = env::var("STRAINER_API_KEY") {
-            config.api.api_key = Some(api_key);
-        }
+        // Merge environment variables - override file config if present.
+        let env_provider = env::var("STRAINER_PROVIDER").ok();
+        let env_api_key = env::var("STRAINER_API_KEY").ok();
+        let env_base_url = env::var("STRAINER_BASE_URL").ok();
 
-        if let Ok(provider) = env::var("STRAINER_PROVIDER") {
+        // Always set provider if it's present in environment
+        if let Some(provider) = env_provider {
             config.api.provider = provider;
         }
 
-        if let Ok(base_url) = env::var("STRAINER_BASE_URL") {
-            config.api.base_url = Some(base_url);
+        if let Some(api_key) = env_api_key {
+            if !api_key.is_empty() {
+                config.api.api_key = Some(api_key);
+            }
         }
 
-        // Rate limits
+        if let Some(base_url) = env_base_url {
+            if !base_url.is_empty() {
+                config.api.base_url = Some(base_url);
+            }
+        }
+
         if let Ok(rpm) = env::var("STRAINER_REQUESTS_PER_MINUTE") {
             config.limits.requests_per_minute = Some(rpm.parse()?);
         }
@@ -246,6 +259,13 @@ impl Config {
             config.logging.format = log_format;
         }
 
+        // After merging env config, override API key if environment variable is set
+        if let Ok(env_api_key) = std::env::var("STRAINER_API_KEY") {
+            if !env_api_key.is_empty() {
+                config.api.api_key = Some(env_api_key);
+            }
+        }
+
         Ok(config)
     }
 
@@ -257,92 +277,135 @@ impl Config {
     /// - Configuration validation fails
     pub fn load() -> Result<Self> {
         let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let current_dir = env::current_dir()?;
 
         let config_paths = [
             PathBuf::from("strainer.toml"),
+            current_dir.join("strainer.toml"),
             home_dir.join(".config/strainer/config.toml"),
             PathBuf::from("/etc/strainer/config.toml"),
         ];
 
-        // Start with default config
-        let mut config = Self::default();
-
-        // Load from file if found
+        // Find the first valid configuration file
+        let mut config = None;
         for path in &config_paths {
-            if let Ok(file_config) = Self::from_file(path) {
-                config = file_config;
-                break;
+            eprintln!("Checking for config at: {}", path.display());
+            if path.exists() {
+                eprintln!("Found config file at: {}", path.display());
+                match Self::from_file(path) {
+                    Ok(file_config) => {
+                        eprintln!("Successfully loaded config from {}", path.display());
+                        eprintln!(
+                            "Using config from file: provider={:?}, api_key={:?}",
+                            file_config.api.provider, file_config.api.api_key
+                        );
+                        config = Some(file_config);
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Error loading config from {}: {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                }
             }
         }
 
-        // Load and merge environment variables last to ensure they take precedence
+        // Use either file config or default
+        let mut config = config.unwrap_or_else(|| {
+            eprintln!("No config file found, using defaults");
+            Self::default()
+        });
+
+        // Load environment config and merge it to override file config values
         if let Ok(env_config) = Self::from_env() {
+            eprintln!(
+                "Merging environment config: provider={:?}, api_key={:?}",
+                env_config.api.provider, env_config.api.api_key
+            );
             config.merge(env_config);
+        } else {
+            eprintln!("No environment config found");
         }
 
+        eprintln!(
+            "Final config before validation: provider={:?}, api_key={:?}",
+            config.api.provider, config.api.api_key
+        );
+
+        // Validate the configuration
         config.validate()?;
+        eprintln!(
+            "Final config: provider={:?}, api_key={:?}",
+            config.api.provider, config.api.api_key
+        );
 
         Ok(config)
     }
 
     /// Merge another configuration into this one, with the other configuration taking precedence
     pub fn merge(&mut self, other: Self) {
-        // API config merging
+        eprintln!("Merging configs:");
+        eprintln!(
+            "  Self before: provider={:?}, api_key={:?}, base_url={:?}",
+            self.api.provider, self.api.api_key, self.api.base_url
+        );
+        eprintln!(
+            "  Other: provider={:?}, api_key={:?}, base_url={:?}",
+            other.api.provider, other.api.api_key, other.api.base_url
+        );
+
+        // API configuration - merge values that are explicitly set
         if other.api.api_key.is_some() {
             self.api.api_key = other.api.api_key;
         }
-        if other.api.base_url.is_some() {
-            self.api.base_url = other.api.base_url;
+
+        // Base URL is overridden only if explicitly set
+        if let Some(ref url) = other.api.base_url {
+            self.api.base_url = Some(url.clone());
         }
-        if !other.api.provider.is_empty() {
+
+        // Provider is overridden if explicitly set in other config
+        if other.api.provider != default_api_provider()
+            || self.api.provider == default_api_provider()
+        {
             self.api.provider = other.api.provider;
         }
-        // Merge provider_specific map
-        self.api
-            .provider_specific
-            .extend(other.api.provider_specific);
 
-        // Rate limits merging - ensure environment values take precedence
-        if other.limits.requests_per_minute.is_some() {
-            self.limits.requests_per_minute = other.limits.requests_per_minute;
-        }
-        if other.limits.tokens_per_minute.is_some() {
-            self.limits.tokens_per_minute = other.limits.tokens_per_minute;
-        }
-        if other.limits.input_tokens_per_minute.is_some() {
-            self.limits.input_tokens_per_minute = other.limits.input_tokens_per_minute;
+        // Provider specific settings are merged
+        for (key, value) in other.api.provider_specific {
+            self.api.provider_specific.insert(key, value);
         }
 
-        // Thresholds merging
-        if other.thresholds.warning != default_warning_threshold() {
-            self.thresholds.warning = other.thresholds.warning;
+        // Rate limits are merged if set
+        if let Some(rpm) = other.limits.requests_per_minute {
+            self.limits.requests_per_minute = Some(rpm);
         }
-        if other.thresholds.critical != default_critical_threshold() {
-            self.thresholds.critical = other.thresholds.critical;
+        if let Some(tpm) = other.limits.tokens_per_minute {
+            self.limits.tokens_per_minute = Some(tpm);
         }
-        if other.thresholds.resume != default_resume_threshold() {
-            self.thresholds.resume = other.thresholds.resume;
-        }
-
-        // Backoff config merging
-        if other.backoff.min_seconds != default_min_backoff() {
-            self.backoff.min_seconds = other.backoff.min_seconds;
-        }
-        if other.backoff.max_seconds != default_max_backoff() {
-            self.backoff.max_seconds = other.backoff.max_seconds;
+        if let Some(itpm) = other.limits.input_tokens_per_minute {
+            self.limits.input_tokens_per_minute = Some(itpm);
         }
 
-        // Process config merging
-        self.process.pause_on_warning = other.process.pause_on_warning;
-        self.process.pause_on_critical = other.process.pause_on_critical;
+        // Thresholds are merged
+        self.thresholds = other.thresholds;
 
-        // Logging config merging
-        if other.logging.level != default_log_level() {
-            self.logging.level = other.logging.level;
-        }
-        if other.logging.format != default_log_format() {
-            self.logging.format = other.logging.format;
-        }
+        // Backoff settings are merged
+        self.backoff = other.backoff;
+
+        // Process settings are merged
+        self.process = other.process;
+
+        // Logging settings are merged
+        self.logging = other.logging;
+
+        eprintln!(
+            "  Self after: provider={:?}, api_key={:?}, base_url={:?}",
+            self.api.provider, self.api.api_key, self.api.base_url
+        );
     }
 
     /// Validate the configuration
@@ -353,31 +416,137 @@ impl Config {
     /// - Required fields are missing
     /// - Field values are invalid
     pub fn validate(&self) -> Result<()> {
+        eprintln!(
+            "Validating config: provider={:?}, api_key={:?}",
+            self.api.provider, self.api.api_key
+        );
+
         // Validate required fields
         // API key validation - not required for mock provider
         if self.api.provider != "mock" && self.api.api_key.is_none() {
+            eprintln!("Validation failed: API key required for non-mock provider");
             return Err(anyhow!("API key is required"));
         }
 
         // Validate rate limits
         if let Some(rpm) = self.limits.requests_per_minute {
             if rpm == 0 {
+                eprintln!("Validation failed: requests_per_minute must be greater than 0");
                 return Err(anyhow!("requests_per_minute must be greater than 0"));
             }
         }
 
         // Validate thresholds
         if self.thresholds.warning >= self.thresholds.critical {
+            eprintln!("Validation failed: warning threshold must be less than critical threshold");
             return Err(anyhow!(
                 "warning threshold must be less than critical threshold"
             ));
         }
         if self.thresholds.resume >= self.thresholds.warning {
+            eprintln!("Validation failed: resume threshold must be less than warning threshold");
             return Err(anyhow!(
                 "resume threshold must be less than warning threshold"
             ));
         }
 
+        eprintln!("Validation passed");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.api.provider, "anthropic");
+        assert_eq!(
+            config.api.base_url,
+            Some("https://api.anthropic.com/v1".to_string())
+        );
+        assert!(config.api.api_key.is_none());
+        assert!(config.api.provider_specific.is_empty());
+    }
+
+    #[test]
+    fn test_config_merge() {
+        let mut base_config = Config::default();
+        base_config.api.api_key = Some("base-key".to_string());
+        base_config.api.base_url = Some("https://base.api.com".to_string());
+        base_config.limits.requests_per_minute = Some(10);
+
+        let mut other_config = Config::default();
+        other_config.api.api_key = Some("other-key".to_string());
+        other_config.api.base_url = Some("https://other.api.com".to_string());
+        other_config.limits.tokens_per_minute = Some(20_000);
+        other_config
+            .api
+            .provider_specific
+            .insert("model".to_string(), Value::String("claude-2".to_string()));
+
+        base_config.merge(other_config.clone());
+
+        // API key and base_url should be overridden when provided
+        assert_eq!(base_config.api.api_key, Some("other-key".to_string()));
+        assert_eq!(
+            base_config.api.base_url,
+            Some("https://other.api.com".to_string())
+        );
+
+        // Rate limits should only be overridden when set in other config
+        assert_eq!(
+            base_config.limits.requests_per_minute,
+            Some(10),
+            "base value should be kept when other is None"
+        );
+        assert_eq!(
+            base_config.limits.tokens_per_minute,
+            Some(20_000),
+            "other value should override when set"
+        );
+
+        // Provider specific settings should be merged
+        assert_eq!(
+            base_config.api.provider_specific.get("model").unwrap(),
+            &Value::String("claude-2".to_string())
+        );
+
+        // Test with explicitly set rate limit
+        other_config.limits.requests_per_minute = Some(30);
+        base_config.merge(other_config);
+        assert_eq!(
+            base_config.limits.requests_per_minute,
+            Some(30),
+            "explicitly set value should override"
+        );
+    }
+
+    #[test]
+    fn test_config_validation() {
+        // Test missing API key
+        let config = Config::default();
+        assert!(config.validate().is_err());
+
+        // Test invalid rate limits
+        let mut config = Config::default();
+        config.api.api_key = Some("test-key".to_string());
+        config.limits.requests_per_minute = Some(0);
+        assert!(config.validate().is_err());
+
+        // Test invalid thresholds
+        let mut config = Config::default();
+        config.api.api_key = Some("test-key".to_string());
+        config.thresholds.warning = 90;
+        config.thresholds.critical = 80;
+        assert!(config.validate().is_err());
+
+        // Test valid config
+        let mut config = Config::default();
+        config.api.api_key = Some("test-key".to_string());
+        config.limits.requests_per_minute = Some(60);
+        assert!(config.validate().is_ok());
     }
 }
