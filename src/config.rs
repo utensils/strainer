@@ -182,17 +182,31 @@ impl Config {
     /// This function will return an error if:
     /// - Environment variables contain invalid values
     pub fn from_env() -> Result<Self> {
-        // Start with default config
-        let mut config = Self::default();
+        // Start with empty config (not default)
+        let mut config = Self {
+            api: ApiConfig {
+                provider: String::new(), // Start with empty provider
+                api_key: None,
+                base_url: None,
+                provider_specific: HashMap::new(),
+            },
+            limits: RateLimits::default(),
+            thresholds: Thresholds::default(),
+            backoff: BackoffConfig::default(),
+            process: ProcessConfig::default(),
+            logging: LoggingConfig::default(),
+        };
 
         // Merge environment variables - override file config if present.
         let env_provider = env::var("STRAINER_PROVIDER").ok();
         let env_api_key = env::var("STRAINER_API_KEY").ok();
         let env_base_url = env::var("STRAINER_BASE_URL").ok();
 
-        // Always set provider if it's present in environment
+        // Set provider if it's present in environment
         if let Some(provider) = env_provider {
-            config.api.provider = provider;
+            if !provider.is_empty() {
+                config.api.provider = provider;
+            }
         }
 
         if let Some(api_key) = env_api_key {
@@ -367,11 +381,12 @@ impl Config {
             self.api.base_url = Some(url.clone());
         }
 
-        // Provider is overridden if explicitly set in other config
-        if other.api.provider != default_api_provider()
-            || self.api.provider == default_api_provider()
-        {
+        // Provider is overridden if not empty, otherwise keep existing provider
+        if !other.api.provider.is_empty() {
             self.api.provider = other.api.provider;
+        } else if self.api.provider.is_empty() {
+            // If both are empty, use the default provider
+            self.api.provider = "anthropic".to_string();
         }
 
         // Provider specific settings are merged

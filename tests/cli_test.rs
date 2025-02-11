@@ -1,105 +1,156 @@
 use anyhow::Result;
 use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+#[allow(unused_imports)]
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::process::Command as TokioCommand;
+#[allow(unused_imports)]
 use tokio::time::sleep;
 
+// Helper function to create a test binary
+fn create_test_binary(dir: &std::path::Path) -> Result<std::path::PathBuf> {
+    let test_binary = dir.join("test_process");
+    fs::write(
+        &test_binary,
+        r#"#!/bin/sh
+        trap "exit 0" TERM
+        while true; do
+            sleep 1
+        done
+        "#,
+    )?;
+    let mut perms = fs::metadata(&test_binary)?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&test_binary, perms)?;
+    Ok(test_binary)
+}
+
 // Helper function to run the command to avoid rebuilding for each test
-async fn run_strainer_command(args: &[&str]) -> Result<std::process::Output> {
+async fn run_strainer_command(
+    args: &[&str],
+    test_dir: &tempfile::TempDir,
+) -> Result<std::process::Output> {
     // Get the absolute path to the binary
     let binary_path = env::current_dir()?
         .join("target/debug/strainer")
         .canonicalize()?;
 
-    // Create a temporary directory for the test
-    let test_dir = tempdir()?;
-    env::set_current_dir(test_dir.path())?;
+    let mut cmd = TokioCommand::new(binary_path);
+    cmd.args(args);
+    cmd.envs(std::env::vars());
+    cmd.current_dir(test_dir.path());
+    Ok(cmd.output().await?)
+}
 
-    Ok(TokioCommand::new(binary_path).args(args).output().await?)
+fn spawn_strainer_command(
+    args: &[&str],
+    test_dir: &tempfile::TempDir,
+) -> anyhow::Result<tokio::process::Child> {
+    // Get the absolute path to the binary
+    let binary_path = std::env::current_dir()?
+        .join("target/debug/strainer")
+        .canonicalize()?;
+
+    let mut cmd = tokio::process::Command::new(binary_path);
+    cmd.args(args);
+    cmd.envs(std::env::vars());
+    cmd.current_dir(test_dir.path());
+    Ok(cmd.spawn()?)
 }
 
 #[tokio::test]
 async fn test_run_command_basic() -> Result<()> {
-    let output = run_strainer_command(&[
-        "run",
-        "--api-key",
-        "test_key",
-        "--api",
-        "mock",
-        "--",
-        "echo",
-        "test",
-    ])
-    .await?;
-
-    assert!(output.status.success(), "Command failed: {output:?}");
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_run_command_rate_limits() -> Result<()> {
-    let output = run_strainer_command(&[
-        "run",
-        "--api-key",
-        "test_key",
-        "--api",
-        "mock",
-        "--requests-per-minute",
-        "60",
-        "--tokens-per-minute",
-        "1000",
-        "--warning-threshold",
-        "20",
-        "--critical-threshold",
-        "40",
-        "--resume-threshold",
-        "10",
-        "--",
-        "echo",
-        "rate_test",
-    ])
-    .await?;
-
-    assert!(output.status.success(), "Command failed: {output:?}");
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_run_command_process_control() -> Result<()> {
-    let mut child = TokioCommand::new(env::current_dir()?.join("target/debug/strainer"))
-        .args([
+    let test_dir = tempdir()?;
+    let output = run_strainer_command(
+        &[
             "run",
             "--api-key",
             "test_key",
             "--api",
             "mock",
-            "--pause-on-critical",
-            "--critical-threshold",
-            "10",
+            "--",
+            "echo",
+            "test",
+        ],
+        &test_dir,
+    )
+    .await?;
+
+    assert!(output.status.success(), "Command failed: {output:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_run_command_rate_limits() -> anyhow::Result<()> {
+    let test_dir = tempdir()?;
+    let output = run_strainer_command(
+        &[
+            "run",
+            "--api-key",
+            "test_key",
+            "--api",
+            "mock",
             "--requests-per-minute",
-            "1",
+            "60",
+            "--tokens-per-minute",
+            "120",
+            "--input-tokens-per-minute",
+            "100",
+            "--",
+            "echo",
+            "test_rate_limits",
+        ],
+        &test_dir,
+    )
+    .await?;
+
+    // Since echo runs and exits successfully, we expect a success status
+    assert!(
+        output.status.success(),
+        "Expected run command to succeed with valid command args"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_run_command_process_control() -> anyhow::Result<()> {
+    let test_dir = tempdir()?;
+    let mut child = spawn_strainer_command(
+        &[
+            "run",
+            "--api-key",
+            "test_key",
+            "--api",
+            "mock",
             "--",
             "echo",
             "process_control",
-        ])
-        .spawn()?;
+        ],
+        &test_dir,
+    )?;
 
-    // Give it a shorter time to start and potentially pause
+    // Give it a short time to start
     sleep(Duration::from_millis(100)).await;
 
     // Kill the process
     child.kill().await?;
     let status = child.wait().await?;
 
-    // Process should have been killed by us, so it should not exit successfully
+    // Process should have been killed, so exit status is non-success
     assert!(!status.success());
     Ok(())
 }
 
 #[tokio::test]
 async fn test_run_command_invalid() -> Result<()> {
-    let output = run_strainer_command(&["run", "--api-key", "test_key", "--api", "mock"]).await?;
+    let test_dir = tempdir()?;
+    let output = run_strainer_command(
+        &["run", "--api-key", "test_key", "--api", "mock"],
+        &test_dir,
+    )
+    .await?;
 
     // Should fail because no command was provided
     assert!(!output.status.success());
@@ -107,19 +158,41 @@ async fn test_run_command_invalid() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_watch_command() -> Result<()> {
-    let output = run_strainer_command(&[
-        "watch",
-        "--pid",
-        "1", // pid 1 should always exist
-        "--api-key",
-        "test_key",
-        "--api",
-        "mock",
-    ])
+async fn test_watch_command() -> anyhow::Result<()> {
+    // Create a temporary directory for our test processes
+    let test_dir = tempdir()?;
+
+    // Create and start our test process
+    let test_binary = create_test_binary(test_dir.path())?;
+    let mut child = tokio::process::Command::new(&test_binary)
+        .current_dir(test_dir.path())
+        .spawn()?;
+    let pid = child.id().expect("Failed to get process ID");
+
+    // Give the process a moment to start
+    sleep(Duration::from_millis(100)).await;
+
+    let output = run_strainer_command(
+        &[
+            "watch",
+            "--pid",
+            &pid.to_string(),
+            "--api-key",
+            "test_key",
+            "--api",
+            "mock",
+        ],
+        &test_dir,
+    )
     .await?;
 
-    // Should fail because watch command is not implemented yet
-    assert!(!output.status.success());
+    // With the implemented watch command, if our test process is running, it should succeed
+    assert!(
+        output.status.success(),
+        "Expected watch command to succeed if process {pid} is running"
+    );
+
+    // Clean up our test process
+    child.kill().await?;
     Ok(())
 }

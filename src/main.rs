@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { command, .. } => run_command(command, final_config).await,
-        Commands::Watch { pid: _pid, .. } => watch_process(final_config),
+        Commands::Watch { pid, .. } => watch_process(pid, final_config),
         Commands::Init { .. } => unreachable!(), // Already handled above
     }
 }
@@ -139,7 +139,16 @@ async fn run_command(command: Vec<String>, config: Config) -> Result<()> {
     }
 }
 
-fn watch_process(_config: Config) -> Result<()> {
-    // TODO: Implement watch process command
-    todo!("Watch process not yet implemented")
+fn watch_process(pid: u32, _config: Config) -> Result<()> {
+    // SAFETY: Process IDs on Unix systems are always positive and within i32 range
+    // If this assumption is violated, we want to panic as it indicates a serious system issue
+    #[allow(clippy::cast_possible_wrap)]
+    let pid_i32 = pid as i32;
+    let controller = process::ProcessController::new(pid_i32);
+    if controller.is_running() {
+        println!("Process {pid} is running");
+        Ok(())
+    } else {
+        anyhow::bail!("Process {} is not running", pid);
+    }
 }
