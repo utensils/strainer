@@ -1,4 +1,5 @@
 use crate::config::ApiConfig;
+use crate::providers::config::AnthropicConfig;
 use crate::providers::{Provider, RateLimitInfo};
 use anyhow::Result;
 
@@ -8,11 +9,11 @@ use anyhow::Result;
 pub struct AnthropicProvider {
     api_key: String,
     base_url: String,
+    config: AnthropicConfig,
 }
 
 impl AnthropicProvider {
     /// Create a new Anthropic provider with the given configuration
-    /// Creates a new Anthropic API provider with the given configuration
     ///
     /// # Errors
     ///
@@ -25,11 +26,22 @@ impl AnthropicProvider {
             .api_key
             .clone()
             .ok_or_else(|| anyhow::anyhow!("API key is required for Anthropic"))?;
+
         let base_url = config
             .base_url
             .clone()
             .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
-        Ok(Self { api_key, base_url })
+
+        let provider_config = match &config.provider_config {
+            crate::providers::config::ProviderConfig::Anthropic(cfg) => cfg.clone(),
+            _ => return Err(anyhow::anyhow!("Invalid provider configuration")),
+        };
+
+        Ok(Self {
+            api_key,
+            base_url,
+            config: provider_config,
+        })
     }
 }
 
@@ -52,29 +64,62 @@ impl Provider for AnthropicProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::config::ProviderConfig;
 
     #[test]
     fn test_anthropic_provider_new() {
         let config = ApiConfig {
+            provider_config: ProviderConfig::Anthropic(AnthropicConfig::default()),
             api_key: Some("test_key".to_string()),
-            ..Default::default()
+            base_url: None,
         };
         let provider = AnthropicProvider::new(&config);
         assert!(provider.is_ok());
+        let provider = provider.unwrap();
+        assert_eq!(provider.api_key, "test_key");
+        assert_eq!(provider.base_url, "https://api.anthropic.com/v1");
+        assert_eq!(provider.config.model, "claude-2");
+        assert_eq!(provider.config.max_tokens, 1000);
     }
 
     #[test]
     fn test_anthropic_provider_missing_key() {
-        let config = ApiConfig::default();
+        let config = ApiConfig {
+            provider_config: ProviderConfig::Anthropic(AnthropicConfig::default()),
+            api_key: None,
+            base_url: None,
+        };
         let provider = AnthropicProvider::new(&config);
         assert!(provider.is_err());
+        assert_eq!(
+            provider.unwrap_err().to_string(),
+            "API key is required for Anthropic"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_provider_invalid_config() {
+        let config = ApiConfig {
+            provider_config: ProviderConfig::OpenAI(
+                crate::providers::config::OpenAIConfig::default(),
+            ),
+            api_key: Some("test_key".to_string()),
+            base_url: None,
+        };
+        let provider = AnthropicProvider::new(&config);
+        assert!(provider.is_err());
+        assert_eq!(
+            provider.unwrap_err().to_string(),
+            "Invalid provider configuration"
+        );
     }
 
     #[test]
     fn test_anthropic_provider_rate_limits() {
         let config = ApiConfig {
+            provider_config: ProviderConfig::Anthropic(AnthropicConfig::default()),
             api_key: Some("test_key".to_string()),
-            ..Default::default()
+            base_url: None,
         };
         let provider = AnthropicProvider::new(&config).unwrap();
         let limits = provider.get_rate_limits();

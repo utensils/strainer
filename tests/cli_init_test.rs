@@ -59,7 +59,7 @@ fn test_init_command_force_override() -> anyhow::Result<()> {
     cmd.assert().success();
 
     let config_content = fs::read_to_string(config_path)?;
-    assert!(config_content.contains("provider"));
+    assert!(config_content.contains("[api]"));
     Ok(())
 }
 

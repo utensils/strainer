@@ -1,6 +1,11 @@
 use crate::config::ApiConfig;
 use anyhow::Result;
 
+pub mod anthropic;
+pub mod config;
+pub mod mock;
+pub mod rate_limiter;
+
 /// Trait defining the interface for rate limit providers
 pub trait Provider: std::fmt::Debug + std::any::Any + Send + Sync {
     /// Get the current rate limits from the provider
@@ -35,27 +40,28 @@ pub struct RateLimitInfo {
 /// - Invalid configuration parameters
 /// - Provider initialization fails
 pub fn create_provider(config: &ApiConfig) -> Result<Box<dyn Provider>> {
-    match config.provider.as_str() {
-        "anthropic" => Ok(Box::new(anthropic::AnthropicProvider::new(config)?)),
-        "mock" => Ok(Box::new(mock::MockProvider::new(config)?)),
-        _ => Err(anyhow::anyhow!("Unsupported provider: {}", config.provider)),
+    match &config.provider_config {
+        config::ProviderConfig::Anthropic(_) => {
+            Ok(Box::new(anthropic::AnthropicProvider::new(config)?))
+        }
+        config::ProviderConfig::OpenAI(_) => {
+            Err(anyhow::anyhow!("OpenAI provider not yet implemented"))
+        }
+        config::ProviderConfig::Mock(_) => Ok(Box::new(mock::MockProvider::new(config)?)),
     }
 }
-
-pub mod anthropic;
-pub mod mock;
-pub mod rate_limiter;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::config::{AnthropicConfig, ProviderConfig};
 
     #[test]
     fn test_create_anthropic_provider() {
         let config = ApiConfig {
-            provider: String::from("anthropic"),
+            provider_config: ProviderConfig::Anthropic(AnthropicConfig::default()),
             api_key: Some("test_key".to_string()),
-            ..Default::default()
+            base_url: None,
         };
         let provider = create_provider(&config);
         assert!(provider.is_ok());
@@ -64,14 +70,15 @@ mod tests {
     #[test]
     fn test_create_unsupported_provider() {
         let config = ApiConfig {
-            provider: String::from("unsupported"),
-            ..Default::default()
+            provider_config: ProviderConfig::OpenAI(config::OpenAIConfig::default()),
+            api_key: Some("test_key".to_string()),
+            base_url: None,
         };
         let provider = create_provider(&config);
         assert!(provider.is_err());
         assert_eq!(
             provider.unwrap_err().to_string(),
-            "Unsupported provider: unsupported"
+            "OpenAI provider not yet implemented"
         );
     }
 

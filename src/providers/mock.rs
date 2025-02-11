@@ -1,4 +1,5 @@
 use crate::config::ApiConfig;
+use crate::providers::config::MockConfig;
 use crate::providers::{Provider, RateLimitInfo};
 use anyhow::Result;
 
@@ -8,6 +9,8 @@ pub struct MockProvider {
     pub requests_used: u32,
     pub tokens_used: u32,
     pub input_tokens_used: u32,
+    #[allow(dead_code)]
+    config: MockConfig,
 }
 
 impl MockProvider {
@@ -17,12 +20,17 @@ impl MockProvider {
     ///
     /// This implementation never returns an error, but the Result type is used
     /// to maintain consistency with the Provider trait requirements.
-    pub const fn new(_config: &ApiConfig) -> Result<Self> {
-        // For testing, we don't require API key validation
+    pub fn new(config: &ApiConfig) -> Result<Self> {
+        let provider_config = match &config.provider_config {
+            crate::providers::config::ProviderConfig::Mock(cfg) => cfg.clone(),
+            _ => return Err(anyhow::anyhow!("Invalid provider configuration")),
+        };
+
         Ok(Self {
             requests_used: 0,
             tokens_used: 0,
             input_tokens_used: 0,
+            config: provider_config,
         })
     }
 
@@ -51,14 +59,14 @@ impl Provider for MockProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::config::ProviderConfig;
 
     #[test]
     fn test_mock_provider_new() {
         let config = ApiConfig {
-            provider: "mock".to_string(),
+            provider_config: ProviderConfig::Mock(MockConfig::default()),
             api_key: None,
             base_url: None,
-            provider_specific: std::collections::HashMap::default(),
         };
         let provider = MockProvider::new(&config).unwrap();
         assert_eq!(provider.requests_used, 0);
@@ -67,8 +75,29 @@ mod tests {
     }
 
     #[test]
+    fn test_mock_provider_invalid_config() {
+        let config = ApiConfig {
+            provider_config: ProviderConfig::Anthropic(
+                crate::providers::config::AnthropicConfig::default(),
+            ),
+            api_key: Some("test_key".to_string()),
+            base_url: None,
+        };
+        let provider = MockProvider::new(&config);
+        assert!(provider.is_err());
+        assert_eq!(
+            provider.unwrap_err().to_string(),
+            "Invalid provider configuration"
+        );
+    }
+
+    #[test]
     fn test_mock_provider_set_usage() {
-        let config = ApiConfig::default();
+        let config = ApiConfig {
+            provider_config: ProviderConfig::Mock(MockConfig::default()),
+            api_key: None,
+            base_url: None,
+        };
         let mut provider = MockProvider::new(&config).unwrap();
         provider.set_usage(10, 100, 50);
         assert_eq!(provider.requests_used, 10);
@@ -78,7 +107,11 @@ mod tests {
 
     #[test]
     fn test_mock_provider_get_rate_limits() {
-        let config = ApiConfig::default();
+        let config = ApiConfig {
+            provider_config: ProviderConfig::Mock(MockConfig::default()),
+            api_key: None,
+            base_url: None,
+        };
         let mut provider = MockProvider::new(&config).unwrap();
         provider.set_usage(10, 100, 50);
         let limits = provider.get_rate_limits().unwrap();
@@ -89,7 +122,11 @@ mod tests {
 
     #[test]
     fn test_mock_provider_as_any() {
-        let config = ApiConfig::default();
+        let config = ApiConfig {
+            provider_config: ProviderConfig::Mock(MockConfig::default()),
+            api_key: None,
+            base_url: None,
+        };
         let provider = MockProvider::new(&config).unwrap();
         let _: &MockProvider = provider.as_any().downcast_ref().unwrap();
     }

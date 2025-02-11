@@ -1,8 +1,11 @@
 # Minimal configuration example
 # Only required fields are specified
 
-[provider]
-name = "anthropic"
+[api]
+# Provider configuration using type-safe enum
+provider_config = { type = "anthropic" }  # Uses default model and max_tokens
+
+# API key (can also be set via STRAINER_API_KEY environment variable)
 api_key = "${ANTHROPIC_API_KEY}"
 
 # Only limit requests, ignore token counts

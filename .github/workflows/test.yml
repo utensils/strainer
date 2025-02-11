@@ -15,7 +15,7 @@ jobs:
   test:
     env:
       STRAINER_API_KEY: "env-key"
-      STRAINER_PROVIDER: "anthropic"
+      STRAINER_PROVIDER_CONFIG: '{"type":"anthropic","model":"claude-2","max_tokens":100000}'
       STRAINER_BASE_URL: "https://env.api.com"
       STRAINER_REQUESTS_PER_MINUTE: 30
       STRAINER_TOKENS_PER_MINUTE: 50000
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       STRAINER_API_KEY: "env-key"
-      STRAINER_PROVIDER: "anthropic"
+      STRAINER_PROVIDER_CONFIG: '{"type":"anthropic","model":"claude-2","max_tokens":100000}'
       STRAINER_BASE_URL: "https://env.api.com"
       STRAINER_REQUESTS_PER_MINUTE: 30
       STRAINER_TOKENS_PER_MINUTE: 50000

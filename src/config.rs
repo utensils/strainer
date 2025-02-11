@@ -1,10 +1,12 @@
+use crate::providers::config::ProviderConfig;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
+    pub api: ApiConfig,
     #[serde(default)]
     pub limits: RateLimits,
     #[serde(default)]
@@ -14,12 +16,9 @@ pub struct Config {
     #[serde(default)]
     pub process: ProcessConfig,
     #[serde(default)]
-    pub api: ApiConfig,
-    #[serde(default)]
     pub logging: LoggingConfig,
 }
 
-#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RateLimits {
     pub requests_per_minute: Option<u32>,
@@ -37,16 +36,6 @@ pub struct Thresholds {
     pub resume: u8,
 }
 
-const fn default_warning_threshold() -> u8 {
-    30
-}
-const fn default_critical_threshold() -> u8 {
-    50
-}
-const fn default_resume_threshold() -> u8 {
-    25
-}
-
 impl Default for Thresholds {
     fn default() -> Self {
         Self {
@@ -57,19 +46,22 @@ impl Default for Thresholds {
     }
 }
 
+const fn default_warning_threshold() -> u8 {
+    80
+}
+const fn default_critical_threshold() -> u8 {
+    90
+}
+const fn default_resume_threshold() -> u8 {
+    70
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackoffConfig {
     #[serde(default = "default_min_backoff")]
     pub min_seconds: u32,
     #[serde(default = "default_max_backoff")]
     pub max_seconds: u32,
-}
-
-const fn default_min_backoff() -> u32 {
-    5
-}
-const fn default_max_backoff() -> u32 {
-    60
 }
 
 impl Default for BackoffConfig {
@@ -81,58 +73,66 @@ impl Default for BackoffConfig {
     }
 }
 
+const fn default_min_backoff() -> u32 {
+    1
+}
+const fn default_max_backoff() -> u32 {
+    60
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessConfig {
-    #[serde(default)]
+    #[serde(default = "default_pause_on_warning")]
     pub pause_on_warning: bool,
     #[serde(default = "default_pause_on_critical")]
     pub pause_on_critical: bool,
 }
 
-const fn default_pause_on_critical() -> bool {
-    true
-}
-
 impl Default for ProcessConfig {
     fn default() -> Self {
         Self {
-            pause_on_warning: false,
+            pause_on_warning: default_pause_on_warning(),
             pause_on_critical: default_pause_on_critical(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    #[serde(default = "default_api_provider")]
-    pub provider: String,
-    pub api_key: Option<String>,
-    pub base_url: Option<String>,
-    #[serde(default)]
-    pub provider_specific: HashMap<String, Value>,
+const fn default_pause_on_warning() -> bool {
+    false
+}
+const fn default_pause_on_critical() -> bool {
+    true
 }
 
-fn default_api_provider() -> String {
-    // Default to Anthropic as the provider
-    "anthropic".to_string()
-}
-impl ApiConfig {
-    fn default_base_url(provider: &str) -> Option<String> {
-        match provider {
-            "anthropic" => Some("https://api.anthropic.com/v1".to_string()),
-            _ => None,
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiConfig {
+    #[serde(flatten)]
+    pub provider_config: ProviderConfig,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
-        let provider = default_api_provider();
-        Self {
-            provider: provider.clone(),
+        let config = Self {
+            provider_config: ProviderConfig::default(),
             api_key: None,
-            base_url: Self::default_base_url(&provider),
-            provider_specific: HashMap::new(),
+            base_url: None,
+        };
+        Self {
+            base_url: config.base_url(),
+            ..config
+        }
+    }
+}
+
+impl ApiConfig {
+    #[must_use]
+    pub fn base_url(&self) -> Option<String> {
+        match &self.provider_config {
+            ProviderConfig::Anthropic(_) => Some("https://api.anthropic.com/v1".to_string()),
+            ProviderConfig::OpenAI(_) => Some("https://api.openai.com/v1".to_string()),
+            ProviderConfig::Mock(_) => None,
         }
     }
 }
@@ -145,13 +145,6 @@ pub struct LoggingConfig {
     pub format: String,
 }
 
-fn default_log_level() -> String {
-    "info".to_string()
-}
-fn default_log_format() -> String {
-    "text".to_string()
-}
-
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -161,105 +154,18 @@ impl Default for LoggingConfig {
     }
 }
 
+fn default_log_level() -> String {
+    "info".to_string()
+}
+fn default_log_format() -> String {
+    "text".to_string()
+}
+
 impl Config {
-    /// Load configuration from a TOML file at the specified path
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - The file cannot be read
-    /// - The file contents are not valid UTF-8
-    /// - The TOML content cannot be parsed into the Config structure
-    pub fn from_file(path: &PathBuf) -> Result<Self> {
-        let contents = std::fs::read_to_string(path)?;
-        Ok(toml::from_str(&contents)?)
-    }
-
-    /// Load configuration from environment variables
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if:
-    /// - Environment variables contain invalid values
-    pub fn from_env() -> Result<Self> {
-        // Start with default config
-        let mut config = Self::default();
-
-        // Merge environment variables - override file config if present.
-        let env_provider = env::var("STRAINER_PROVIDER").ok();
-        let env_api_key = env::var("STRAINER_API_KEY").ok();
-        let env_base_url = env::var("STRAINER_BASE_URL").ok();
-
-        // Set provider if it's present in environment
-        if let Some(provider) = env_provider {
-            config.api.provider = provider;
-            // Update base URL if it's not already set by environment
-            if env_base_url.is_none() {
-                config.api.base_url = ApiConfig::default_base_url(&config.api.provider);
-            }
-        }
-
-        if let Some(api_key) = env_api_key {
-            config.api.api_key = Some(api_key);
-        }
-
-        if let Some(base_url) = env_base_url {
-            config.api.base_url = Some(base_url);
-        }
-
-        if let Ok(rpm) = env::var("STRAINER_REQUESTS_PER_MINUTE") {
-            config.limits.requests_per_minute = Some(rpm.parse()?);
-        }
-
-        if let Ok(tpm) = env::var("STRAINER_TOKENS_PER_MINUTE") {
-            config.limits.tokens_per_minute = Some(tpm.parse()?);
-        }
-
-        if let Ok(itpm) = env::var("STRAINER_INPUT_TOKENS_PER_MINUTE") {
-            config.limits.input_tokens_per_minute = Some(itpm.parse()?);
-        }
-
-        // Thresholds
-        if let Ok(warning) = env::var("STRAINER_WARNING_THRESHOLD") {
-            config.thresholds.warning = warning.parse()?;
-        }
-
-        if let Ok(critical) = env::var("STRAINER_CRITICAL_THRESHOLD") {
-            config.thresholds.critical = critical.parse()?;
-        }
-
-        if let Ok(resume) = env::var("STRAINER_RESUME_THRESHOLD") {
-            config.thresholds.resume = resume.parse()?;
-        }
-
-        // Process configuration
-        if let Ok(pause_on_warning) = env::var("STRAINER_PAUSE_ON_WARNING") {
-            config.process.pause_on_warning = pause_on_warning.parse()?;
-        }
-
-        if let Ok(pause_on_critical) = env::var("STRAINER_PAUSE_ON_CRITICAL") {
-            config.process.pause_on_critical = pause_on_critical.parse()?;
-        }
-
-        // Backoff configuration
-        if let Ok(min_backoff) = env::var("STRAINER_MIN_BACKOFF") {
-            config.backoff.min_seconds = min_backoff.parse()?;
-        }
-
-        if let Ok(max_backoff) = env::var("STRAINER_MAX_BACKOFF") {
-            config.backoff.max_seconds = max_backoff.parse()?;
-        }
-
-        // Logging configuration
-        if let Ok(log_level) = env::var("STRAINER_LOG_LEVEL") {
-            config.logging.level = log_level;
-        }
-
-        if let Ok(log_format) = env::var("STRAINER_LOG_FORMAT") {
-            config.logging.format = log_format;
-        }
-
-        Ok(config)
+    /// Create a new configuration builder
+    #[must_use]
+    pub fn builder() -> ConfigBuilder {
+        ConfigBuilder::new()
     }
 
     /// Load configuration from default locations and environment variables
@@ -273,161 +179,89 @@ impl Config {
         let current_dir = env::current_dir()?;
 
         let config_paths = [
-            PathBuf::from("strainer.toml"),
             current_dir.join("strainer.toml"),
             home_dir.join(".config/strainer/config.toml"),
-            PathBuf::from("/etc/strainer/config.toml"),
+            home_dir.join(".strainer.toml"),
         ];
 
-        // Find the first valid configuration file
-        let mut config = None;
-        for path in &config_paths {
-            eprintln!("Checking for config at: {}", path.display());
-            if path.exists() {
-                eprintln!("Found config file at: {}", path.display());
-                match Self::from_file(path) {
-                    Ok(file_config) => {
-                        eprintln!("Successfully loaded config from {}", path.display());
-                        eprintln!(
-                            "Using config from file: provider={:?}, api_key={:?}",
-                            file_config.api.provider, file_config.api.api_key
-                        );
-                        config = Some(file_config);
-                        break;
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "Warning: Error loading config from {}: {}",
-                            path.display(),
-                            e
-                        );
-                    }
+        // Try to load from file first
+        let builder = config_paths.iter().try_fold(
+            Self::builder(),
+            |builder, path: &std::path::PathBuf| -> Result<ConfigBuilder, anyhow::Error> {
+                if path.exists() {
+                    builder.from_file(path)
+                } else {
+                    Ok(builder)
+                }
+            },
+        )?;
+
+        // Then load from environment, which will override file settings
+        builder.from_env()?.build()
+    }
+
+    /// Validate the configuration
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Required fields are missing
+    /// - Field values are invalid
+    /// - Provider-specific validation fails
+    pub fn validate(&self) -> Result<()> {
+        // Validate API configuration
+        match &self.api.provider_config {
+            ProviderConfig::Mock(_) => {}
+            _ => {
+                if self.api.api_key.is_none() {
+                    return Err(anyhow!("API key is required for non-mock provider"));
                 }
             }
         }
 
-        // Start with either file config or default
-        let mut config = config.unwrap_or_else(|| {
-            eprintln!("No config file found, using defaults");
-            Self::default()
-        });
+        // Validate provider-specific configuration
+        self.api.provider_config.validate()?;
 
-        // Load environment config
-        if let Ok(env_config) = Self::from_env() {
-            eprintln!(
-                "Merging environment config: provider={:?}, api_key={:?}",
-                env_config.api.provider, env_config.api.api_key
-            );
-
-            // Environment values take precedence over file values
-            if env::var("STRAINER_PROVIDER").is_ok() {
-                config.api.provider = env_config.api.provider;
-            }
-            if env::var("STRAINER_API_KEY").is_ok() {
-                config.api.api_key = env_config.api.api_key;
-            }
-            if env::var("STRAINER_BASE_URL").is_ok() {
-                config.api.base_url = env_config.api.base_url;
-            }
-
-            // Merge other fields only if they are set in environment
-            if env::var("STRAINER_REQUESTS_PER_MINUTE").is_ok() {
-                config.limits.requests_per_minute = env_config.limits.requests_per_minute;
-            }
-            if env::var("STRAINER_TOKENS_PER_MINUTE").is_ok() {
-                config.limits.tokens_per_minute = env_config.limits.tokens_per_minute;
-            }
-            if env::var("STRAINER_INPUT_TOKENS_PER_MINUTE").is_ok() {
-                config.limits.input_tokens_per_minute = env_config.limits.input_tokens_per_minute;
-            }
-
-            // Merge thresholds only if set in environment
-            if env::var("STRAINER_WARNING_THRESHOLD").is_ok() {
-                config.thresholds.warning = env_config.thresholds.warning;
-            }
-            if env::var("STRAINER_CRITICAL_THRESHOLD").is_ok() {
-                config.thresholds.critical = env_config.thresholds.critical;
-            }
-            if env::var("STRAINER_RESUME_THRESHOLD").is_ok() {
-                config.thresholds.resume = env_config.thresholds.resume;
-            }
-
-            // Merge backoff settings only if set in environment
-            if env::var("STRAINER_MIN_BACKOFF").is_ok() {
-                config.backoff.min_seconds = env_config.backoff.min_seconds;
-            }
-            if env::var("STRAINER_MAX_BACKOFF").is_ok() {
-                config.backoff.max_seconds = env_config.backoff.max_seconds;
-            }
-
-            // Merge process settings only if set in environment
-            if env::var("STRAINER_PAUSE_ON_WARNING").is_ok() {
-                config.process.pause_on_warning = env_config.process.pause_on_warning;
-            }
-            if env::var("STRAINER_PAUSE_ON_CRITICAL").is_ok() {
-                config.process.pause_on_critical = env_config.process.pause_on_critical;
-            }
-
-            // Merge logging settings only if set in environment
-            if env::var("STRAINER_LOG_LEVEL").is_ok() {
-                config.logging.level = env_config.logging.level;
-            }
-            if env::var("STRAINER_LOG_FORMAT").is_ok() {
-                config.logging.format = env_config.logging.format;
-            }
-        } else {
-            eprintln!("No environment config found");
+        // Validate thresholds
+        if self.thresholds.warning >= self.thresholds.critical {
+            return Err(anyhow!(
+                "Warning threshold must be less than critical threshold"
+            ));
+        }
+        if self.thresholds.resume >= self.thresholds.warning {
+            return Err(anyhow!(
+                "Resume threshold must be less than warning threshold"
+            ));
         }
 
-        eprintln!(
-            "Final config before validation: provider={:?}, api_key={:?}",
-            config.api.provider, config.api.api_key
-        );
+        // Validate backoff configuration
+        if self.backoff.min_seconds >= self.backoff.max_seconds {
+            return Err(anyhow!("Minimum backoff must be less than maximum backoff"));
+        }
 
-        // Validate the configuration
-        config.validate()?;
-        eprintln!(
-            "Final config: provider={:?}, api_key={:?}",
-            config.api.provider, config.api.api_key
-        );
-
-        Ok(config)
+        Ok(())
     }
 
-    /// Merge another configuration into this one, with the other configuration taking precedence
+    /// Merge another configuration into this one
     pub fn merge(&mut self, other: Self) {
-        eprintln!("Merging configs:");
-        eprintln!(
-            "  Self before: provider={:?}, api_key={:?}, base_url={:?}",
-            self.api.provider, self.api.api_key, self.api.base_url
-        );
-        eprintln!(
-            "  Other: provider={:?}, api_key={:?}, base_url={:?}",
-            other.api.provider, other.api.api_key, other.api.base_url
-        );
-
-        // API configuration - merge values that are explicitly set
-        if other.api.api_key.is_some() {
-            self.api.api_key = other.api.api_key;
+        // API configuration is merged
+        if let Some(api_key) = other.api.api_key {
+            self.api.api_key = Some(api_key);
         }
 
-        // Base URL is overridden only if explicitly set
-        if let Some(ref url) = other.api.base_url {
-            self.api.base_url = Some(url.clone());
+        if let Some(base_url) = other.api.base_url {
+            self.api.base_url = Some(base_url);
         }
 
-        // Provider is overridden if not empty
-        if !other.api.provider.is_empty() {
-            self.api.provider.clone_from(&other.api.provider);
+        // Provider configuration is replaced if different
+        if std::mem::discriminant(&other.api.provider_config)
+            != std::mem::discriminant(&self.api.provider_config)
+        {
+            self.api.provider_config = other.api.provider_config;
             // Update base URL if it's not already set
             if self.api.base_url.is_none() {
-                self.api.base_url = ApiConfig::default_base_url(&self.api.provider);
+                self.api.base_url = self.api.base_url();
             }
-        }
-
-        // Provider specific settings are merged
-        for (key, value) in other.api.provider_specific {
-            self.api.provider_specific.insert(key, value);
         }
 
         // Rate limits are merged if set
@@ -441,7 +275,7 @@ impl Config {
             self.limits.input_tokens_per_minute = Some(itpm);
         }
 
-        // Thresholds are merged only if they differ from defaults
+        // Thresholds are merged if they differ from defaults
         if other.thresholds.warning != default_warning_threshold() {
             self.thresholds.warning = other.thresholds.warning;
         }
@@ -452,87 +286,270 @@ impl Config {
             self.thresholds.resume = other.thresholds.resume;
         }
 
-        // Backoff settings are merged only if they differ from defaults
-        if other.backoff.min_seconds != default_min_backoff() {
-            self.backoff.min_seconds = other.backoff.min_seconds;
-        }
-        if other.backoff.max_seconds != default_max_backoff() {
-            self.backoff.max_seconds = other.backoff.max_seconds;
-        }
-
-        // Process settings are merged only if they differ from defaults
+        // Process settings are merged if they differ from defaults
         if other.process.pause_on_warning != ProcessConfig::default().pause_on_warning {
             self.process.pause_on_warning = other.process.pause_on_warning;
         }
         if other.process.pause_on_critical != default_pause_on_critical() {
             self.process.pause_on_critical = other.process.pause_on_critical;
         }
+    }
+}
 
-        // Logging settings are merged only if they differ from defaults
-        if other.logging.level != default_log_level() {
-            self.logging.level = other.logging.level;
-        }
-        if other.logging.format != default_log_format() {
-            self.logging.format = other.logging.format;
-        }
+/// Builder for creating Config instances with various sources
+#[derive(Debug)]
+pub struct ConfigBuilder {
+    config: Config,
+}
 
-        eprintln!(
-            "  Self after: provider={:?}, api_key={:?}, base_url={:?}",
-            self.api.provider, self.api.api_key, self.api.base_url
-        );
+impl ConfigBuilder {
+    /// Create a new `ConfigBuilder` with default values
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            config: Config::default(),
+        }
     }
 
-    /// Validate the configuration
+    /// Load configuration from a TOML file
     ///
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Required fields are missing
-    /// - Field values are invalid
-    pub fn validate(&self) -> Result<()> {
-        eprintln!(
-            "Validating config: provider={:?}, api_key={:?}",
-            self.api.provider, self.api.api_key
-        );
+    /// - The file cannot be read
+    /// - The file contents are not valid UTF-8
+    /// - The TOML content cannot be parsed
+    pub fn from_file(mut self, path: &PathBuf) -> Result<Self> {
+        let contents = std::fs::read_to_string(path)?;
+        let file_config: Config = toml::from_str(&contents)?;
+        self.config.merge(file_config);
+        Ok(self)
+    }
 
-        // Validate required fields
-        // API key validation - not required for mock provider
-        if self.api.provider != "mock" && self.api.api_key.is_none() {
-            eprintln!("Validation failed: API key required for non-mock provider");
-            return Err(anyhow!("API key is required"));
-        }
+    /// Load configuration from environment variables
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - Environment variables contain invalid values
+    pub fn from_env(mut self) -> Result<Self> {
+        let mut env_config = Config::default();
 
-        // Validate rate limits
-        if let Some(rpm) = self.limits.requests_per_minute {
-            if rpm == 0 {
-                eprintln!("Validation failed: requests_per_minute must be greater than 0");
-                return Err(anyhow!("requests_per_minute must be greater than 0"));
+        // API Configuration
+        if let Ok(provider_type) = env::var("STRAINER_PROVIDER_TYPE") {
+            env_config.api.provider_config = provider_type.parse().map_err(|e| anyhow!("{}", e))?;
+            // Update base URL if not explicitly set
+            if env::var("STRAINER_BASE_URL").is_err() {
+                env_config.api.base_url = env_config.api.base_url();
             }
         }
 
-        // Validate thresholds
-        if self.thresholds.warning >= self.thresholds.critical {
-            eprintln!("Validation failed: warning threshold must be less than critical threshold");
-            return Err(anyhow!(
-                "warning threshold must be less than critical threshold"
-            ));
-        }
-        if self.thresholds.resume >= self.thresholds.warning {
-            eprintln!("Validation failed: resume threshold must be less than warning threshold");
-            return Err(anyhow!(
-                "resume threshold must be less than warning threshold"
-            ));
+        if let Ok(api_key) = env::var("STRAINER_API_KEY") {
+            env_config.api.api_key = Some(api_key);
         }
 
-        eprintln!("Validation passed");
-        Ok(())
+        if let Ok(base_url) = env::var("STRAINER_BASE_URL") {
+            env_config.api.base_url = Some(base_url);
+        }
+
+        // Rate Limits
+        if let Ok(rpm) = env::var("STRAINER_REQUESTS_PER_MINUTE") {
+            env_config.limits.requests_per_minute = Some(rpm.parse()?);
+        }
+
+        if let Ok(tpm) = env::var("STRAINER_TOKENS_PER_MINUTE") {
+            env_config.limits.tokens_per_minute = Some(tpm.parse()?);
+        }
+
+        if let Ok(itpm) = env::var("STRAINER_INPUT_TOKENS_PER_MINUTE") {
+            env_config.limits.input_tokens_per_minute = Some(itpm.parse()?);
+        }
+
+        // Thresholds
+        if let Ok(warning) = env::var("STRAINER_WARNING_THRESHOLD") {
+            env_config.thresholds.warning = warning.parse()?;
+        }
+
+        if let Ok(critical) = env::var("STRAINER_CRITICAL_THRESHOLD") {
+            env_config.thresholds.critical = critical.parse()?;
+        }
+
+        if let Ok(resume) = env::var("STRAINER_RESUME_THRESHOLD") {
+            env_config.thresholds.resume = resume.parse()?;
+        }
+
+        // Process Configuration
+        if let Ok(pause_on_warning) = env::var("STRAINER_PAUSE_ON_WARNING") {
+            env_config.process.pause_on_warning = pause_on_warning.parse()?;
+        }
+
+        if let Ok(pause_on_critical) = env::var("STRAINER_PAUSE_ON_CRITICAL") {
+            env_config.process.pause_on_critical = pause_on_critical.parse()?;
+        }
+
+        // Backoff Configuration
+        if let Ok(min_backoff) = env::var("STRAINER_MIN_BACKOFF") {
+            env_config.backoff.min_seconds = min_backoff.parse()?;
+        }
+
+        if let Ok(max_backoff) = env::var("STRAINER_MAX_BACKOFF") {
+            env_config.backoff.max_seconds = max_backoff.parse()?;
+        }
+
+        // Logging Configuration
+        if let Ok(log_level) = env::var("STRAINER_LOG_LEVEL") {
+            env_config.logging.level = log_level;
+        }
+
+        if let Ok(log_format) = env::var("STRAINER_LOG_FORMAT") {
+            env_config.logging.format = log_format;
+        }
+
+        self.config.merge(env_config);
+        Ok(self)
+    }
+
+    /// Set the API provider
+    #[must_use]
+    pub fn with_provider(mut self, provider: &str) -> Self {
+        // Try to parse the provider string, fallback to current if invalid
+        if let Ok(provider_config) = provider.parse() {
+            self.config.api.provider_config = provider_config;
+        }
+        self
+    }
+
+    /// Set provider-specific configuration
+    #[must_use]
+    pub fn with_provider_config(mut self, config: ProviderConfig) -> Self {
+        self.config.api.provider_config = config;
+        self
+    }
+
+    /// Set the model for the current provider
+    #[must_use]
+    pub fn with_model(mut self, model: String) -> Self {
+        match &mut self.config.api.provider_config {
+            ProviderConfig::Anthropic(cfg) => cfg.model = model,
+            ProviderConfig::OpenAI(cfg) => cfg.model = model,
+            ProviderConfig::Mock(_) => {}
+        }
+        self
+    }
+
+    /// Set the maximum tokens for the current provider
+    #[must_use]
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        match &mut self.config.api.provider_config {
+            ProviderConfig::Anthropic(cfg) => cfg.max_tokens = max_tokens,
+            ProviderConfig::OpenAI(cfg) => cfg.max_tokens = max_tokens,
+            ProviderConfig::Mock(_) => {}
+        }
+        self
+    }
+
+    /// Set the temperature for `OpenAI` provider
+    #[must_use]
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        if let ProviderConfig::OpenAI(cfg) = &mut self.config.api.provider_config {
+            cfg.temperature = temperature;
+        }
+        self
+    }
+
+    /// Set the API key
+    #[must_use]
+    pub fn with_api_key(mut self, api_key: String) -> Self {
+        self.config.api.api_key = Some(api_key);
+        self
+    }
+
+    /// Set the base URL
+    #[must_use]
+    pub fn with_base_url(mut self, base_url: String) -> Self {
+        self.config.api.base_url = Some(base_url);
+        self
+    }
+
+    /// Set requests per minute limit
+    #[must_use]
+    pub const fn with_requests_per_minute(mut self, rpm: u32) -> Self {
+        self.config.limits.requests_per_minute = Some(rpm);
+        self
+    }
+
+    /// Set tokens per minute limit
+    #[must_use]
+    pub const fn with_tokens_per_minute(mut self, tpm: u32) -> Self {
+        self.config.limits.tokens_per_minute = Some(tpm);
+        self
+    }
+
+    /// Set input tokens per minute limit
+    #[must_use]
+    pub const fn with_input_tokens_per_minute(mut self, itpm: u32) -> Self {
+        self.config.limits.input_tokens_per_minute = Some(itpm);
+        self
+    }
+
+    /// Set warning threshold
+    #[must_use]
+    pub const fn with_warning_threshold(mut self, threshold: u8) -> Self {
+        self.config.thresholds.warning = threshold;
+        self
+    }
+
+    /// Set critical threshold
+    #[must_use]
+    pub const fn with_critical_threshold(mut self, threshold: u8) -> Self {
+        self.config.thresholds.critical = threshold;
+        self
+    }
+
+    /// Set resume threshold
+    #[must_use]
+    pub const fn with_resume_threshold(mut self, threshold: u8) -> Self {
+        self.config.thresholds.resume = threshold;
+        self
+    }
+
+    /// Set pause on warning
+    #[must_use]
+    pub const fn with_pause_on_warning(mut self, pause: bool) -> Self {
+        self.config.process.pause_on_warning = pause;
+        self
+    }
+
+    /// Set pause on critical
+    #[must_use]
+    pub const fn with_pause_on_critical(mut self, pause: bool) -> Self {
+        self.config.process.pause_on_critical = pause;
+        self
+    }
+
+    /// Build and validate the final configuration
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The configuration is invalid
+    pub fn build(self) -> Result<Config> {
+        let config = self.config;
+        config.validate()?;
+        Ok(config)
+    }
+}
+
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use crate::providers::config::{AnthropicConfig, MockConfig};
     use tempfile::tempdir;
 
     #[test]
@@ -540,67 +557,90 @@ mod tests {
         let mut config = Config::default();
         assert!(config.validate().is_err()); // Should fail without API key
 
-        config.api.provider = "mock".to_string();
+        config.api.provider_config = ProviderConfig::Mock(MockConfig::default());
         assert!(config.validate().is_ok()); // Mock provider doesn't require API key
 
-        config.api.provider = "anthropic".to_string();
+        config.api.provider_config = ProviderConfig::Anthropic(AnthropicConfig::default());
         assert!(config.validate().is_err()); // Should fail without API key
 
         config.api.api_key = Some("test-key".to_string());
         assert!(config.validate().is_ok()); // Should pass with API key
+
+        config.thresholds.warning = 95;
+        config.thresholds.critical = 90;
+        assert!(config.validate().is_err()); // Should fail with invalid thresholds
+
+        config.thresholds.warning = 80;
+        config.thresholds.critical = 90;
+        config.thresholds.resume = 85;
+        assert!(config.validate().is_err()); // Should fail with invalid resume threshold
+
+        config.thresholds.resume = 70;
+        assert!(config.validate().is_ok()); // Should pass with valid thresholds
+
+        config.backoff.min_seconds = 60;
+        config.backoff.max_seconds = 30;
+        assert!(config.validate().is_err()); // Should fail with invalid backoff
     }
 
     #[test]
     fn test_config_merge() {
         let mut base = Config::default();
-        base.api.provider = "anthropic".to_string();
+        base.api.provider_config = ProviderConfig::Anthropic(AnthropicConfig::default());
         base.api.api_key = Some("base-key".to_string());
         base.limits.requests_per_minute = Some(60);
 
         let other = Config {
             api: ApiConfig {
-                provider: "mock".to_string(),
+                provider_config: ProviderConfig::Mock(MockConfig::default()),
                 api_key: Some("other-key".to_string()),
                 base_url: Some("http://test.local".to_string()),
-                provider_specific: HashMap::new(),
             },
             limits: RateLimits {
-                requests_per_minute: Some(30),
-                tokens_per_minute: Some(1000),
-                input_tokens_per_minute: None,
+                requests_per_minute: Some(120),
+                tokens_per_minute: Some(100_000),
+                input_tokens_per_minute: Some(50_000),
             },
             ..Default::default()
         };
 
-        println!("Merging configs:");
         println!(
-            "  Self before: provider=\"{}\", api_key={:?}",
-            base.api.provider, base.api.api_key
+            "  Self before: provider={:?}, api_key={:?}",
+            base.api.provider_config, base.api.api_key
         );
         println!(
-            "  Other: provider=\"{}\", api_key={:?}",
-            other.api.provider, other.api.api_key
+            "  Other: provider={:?}, api_key={:?}",
+            other.api.provider_config, other.api.api_key
         );
 
         base.merge(other);
 
         println!(
-            "  Self after: provider=\"{}\", api_key={:?}",
-            base.api.provider, base.api.api_key
+            "  Self after: provider={:?}, api_key={:?}",
+            base.api.provider_config, base.api.api_key
         );
 
-        assert_eq!(base.api.provider, "mock");
+        match base.api.provider_config {
+            ProviderConfig::Mock(_) => {}
+            _ => panic!("Expected Mock provider"),
+        }
         assert_eq!(base.api.api_key, Some("other-key".to_string()));
         assert_eq!(base.api.base_url, Some("http://test.local".to_string()));
-        assert_eq!(base.limits.requests_per_minute, Some(30));
-        assert_eq!(base.limits.tokens_per_minute, Some(1000));
-        assert_eq!(base.limits.input_tokens_per_minute, None);
+        assert_eq!(base.limits.requests_per_minute, Some(120));
+        assert_eq!(base.limits.tokens_per_minute, Some(100_000));
+        assert_eq!(base.limits.input_tokens_per_minute, Some(50_000));
     }
 
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.api.provider, "anthropic");
+        match config.api.provider_config {
+            ProviderConfig::Anthropic(cfg) => {
+                assert_eq!(cfg.model, "claude-2");
+                assert_eq!(cfg.max_tokens, 1000);
+            }
+            _ => panic!("Expected Anthropic provider as default"),
+        }
         assert_eq!(config.api.api_key, None);
         assert_eq!(
             config.api.base_url,
@@ -609,10 +649,10 @@ mod tests {
         assert_eq!(config.limits.requests_per_minute, None);
         assert_eq!(config.limits.tokens_per_minute, None);
         assert_eq!(config.limits.input_tokens_per_minute, None);
-        assert_eq!(config.thresholds.warning, 30);
-        assert_eq!(config.thresholds.critical, 50);
-        assert_eq!(config.thresholds.resume, 25);
-        assert_eq!(config.backoff.min_seconds, 5);
+        assert_eq!(config.thresholds.warning, 80);
+        assert_eq!(config.thresholds.critical, 90);
+        assert_eq!(config.thresholds.resume, 70);
+        assert_eq!(config.backoff.min_seconds, 1);
         assert_eq!(config.backoff.max_seconds, 60);
         assert!(!config.process.pause_on_warning);
         assert!(config.process.pause_on_critical);
@@ -620,83 +660,64 @@ mod tests {
 
     #[test]
     fn test_load_with_env_override() {
-        // Clean up any existing environment variables first
-        env::remove_var("STRAINER_PROVIDER");
-        env::remove_var("STRAINER_API_KEY");
-        env::remove_var("STRAINER_BASE_URL");
-
-        let dir = tempdir().unwrap();
-        let config_path = dir.path().join("strainer.toml");
-
-        // Create a config file
-        let config_content = r#"
-            [api]
-            provider = "anthropic"
-            api_key = "file-key"
-            base_url = "https://file.api.com"
-        "#;
-        fs::write(&config_path, config_content).unwrap();
-
-        // Set current directory to temp dir so config file is found
         let original_dir = env::current_dir().unwrap();
-        env::set_current_dir(dir.path()).unwrap();
+        let temp_dir = tempdir().unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
 
-        // Set environment variables with unique names for this test
-        env::set_var("STRAINER_PROVIDER_TEST", "mock");
-        env::set_var("STRAINER_API_KEY_TEST", "env-key");
-        env::set_var("STRAINER_BASE_URL_TEST", "https://env.api.com");
+        // Set test environment variables
+        env::set_var("STRAINER_PROVIDER_TYPE", "mock");
+        env::set_var("STRAINER_API_KEY", "env-key");
+        env::set_var("STRAINER_BASE_URL", "https://env.api.com");
 
-        // Create a custom environment config loader for this test
-        let env_config = {
-            let mut config = Config::default();
-            if let Ok(provider) = env::var("STRAINER_PROVIDER_TEST") {
-                config.api.provider = provider;
-            }
-            if let Ok(api_key) = env::var("STRAINER_API_KEY_TEST") {
-                config.api.api_key = Some(api_key);
-            }
-            if let Ok(base_url) = env::var("STRAINER_BASE_URL_TEST") {
-                config.api.base_url = Some(base_url);
-            }
-            config
-        };
+        // Load config from environment
+        let config = Config::builder().from_env().unwrap().build().unwrap();
 
-        // Load environment config
-        println!("Loading environment config...");
-        println!(
-            "Environment config: provider=\"{}\", api_key={:?}",
-            env_config.api.provider, env_config.api.api_key
-        );
-
-        // Load final config
-        println!("Loading final config...");
-        let mut config = Config::load().unwrap();
-
-        // Manually merge environment config
-        if env::var("STRAINER_PROVIDER_TEST").is_ok() {
-            config.api.provider = env_config.api.provider;
+        // Environment should override defaults
+        match config.api.provider_config {
+            ProviderConfig::Mock(_) => {}
+            _ => panic!("Expected Mock provider"),
         }
-        if env::var("STRAINER_API_KEY_TEST").is_ok() {
-            config.api.api_key = env_config.api.api_key;
-        }
-        if env::var("STRAINER_BASE_URL_TEST").is_ok() {
-            config.api.base_url = env_config.api.base_url;
-        }
-
-        println!(
-            "Final config: provider=\"{}\", api_key={:?}",
-            config.api.provider, config.api.api_key
-        );
-
-        // Environment should override file
-        assert_eq!(config.api.provider, "mock");
         assert_eq!(config.api.api_key, Some("env-key".to_string()));
         assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
 
         // Clean up
-        env::remove_var("STRAINER_PROVIDER_TEST");
-        env::remove_var("STRAINER_API_KEY_TEST");
-        env::remove_var("STRAINER_BASE_URL_TEST");
+        env::remove_var("STRAINER_PROVIDER_TYPE");
+        env::remove_var("STRAINER_API_KEY");
+        env::remove_var("STRAINER_BASE_URL");
         env::set_current_dir(original_dir).unwrap();
+    }
+
+    #[test]
+    fn test_provider_type() {
+        let config = Config::builder()
+            .with_api_key("test-key".to_string())
+            .build()
+            .unwrap();
+        match &config.api.provider_config {
+            ProviderConfig::Anthropic(_) => {
+                assert_eq!(config.api.provider_config.to_string(), "anthropic");
+            }
+            _ => panic!("Expected Anthropic provider as default"),
+        }
+
+        let config = Config::builder()
+            .with_api_key("test-key".to_string())
+            .with_provider("openai")
+            .build()
+            .unwrap();
+        match &config.api.provider_config {
+            ProviderConfig::OpenAI(_) => {
+                assert_eq!(config.api.provider_config.to_string(), "openai");
+            }
+            _ => panic!("Expected OpenAI provider"),
+        }
+
+        let config = Config::builder().with_provider("mock").build().unwrap();
+        match &config.api.provider_config {
+            ProviderConfig::Mock(_) => {
+                assert_eq!(config.api.provider_config.to_string(), "mock");
+            }
+            _ => panic!("Expected Mock provider"),
+        }
     }
 }

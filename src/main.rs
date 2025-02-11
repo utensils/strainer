@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use std::collections::HashMap;
 use strainer::config::Config;
 use strainer::providers;
+use strainer::providers::config::{AnthropicConfig, ProviderConfig};
 use strainer::providers::rate_limiter::RateLimiter;
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -59,33 +59,8 @@ async fn main() -> Result<()> {
             Config::default()
         }
     };
-    let cli_config = Config {
-        limits: strainer::config::RateLimits {
-            requests_per_minute: cli.command.requests_per_minute(),
-            tokens_per_minute: cli.command.tokens_per_minute(),
-            input_tokens_per_minute: cli.command.input_tokens_per_minute(),
-        },
-        thresholds: strainer::config::Thresholds {
-            warning: cli.command.warning_threshold(),
-            critical: cli.command.critical_threshold(),
-            resume: cli.command.resume_threshold(),
-        },
-        backoff: strainer::config::BackoffConfig {
-            min_seconds: cli.command.min_backoff(),
-            max_seconds: cli.command.max_backoff(),
-        },
-        process: strainer::config::ProcessConfig {
-            pause_on_warning: cli.command.pause_on_warning(),
-            pause_on_critical: cli.command.pause_on_critical(),
-        },
-        api: strainer::config::ApiConfig {
-            provider: cli.command.api().to_string(),
-            api_key: cli.command.api_key(),
-            base_url: Some(cli.command.api_base_url().to_string()),
-            provider_specific: HashMap::default(),
-        },
-        ..Default::default()
-    };
+
+    let cli_config = create_cli_config(&cli.command);
     let mut final_config = base_config;
     final_config.merge(cli_config);
     final_config.validate()?;
@@ -94,6 +69,40 @@ async fn main() -> Result<()> {
         Commands::Run { command, .. } => run_command(command, final_config).await,
         Commands::Watch { pid, .. } => watch_process(pid, final_config),
         Commands::Init { .. } => unreachable!(), // Already handled above
+    }
+}
+
+fn create_cli_config(cli: &Commands) -> Config {
+    let provider_config = cli
+        .api()
+        .parse()
+        .unwrap_or_else(|_| ProviderConfig::Anthropic(AnthropicConfig::default()));
+
+    Config {
+        limits: strainer::config::RateLimits {
+            requests_per_minute: cli.requests_per_minute(),
+            tokens_per_minute: cli.tokens_per_minute(),
+            input_tokens_per_minute: cli.input_tokens_per_minute(),
+        },
+        thresholds: strainer::config::Thresholds {
+            warning: cli.warning_threshold(),
+            critical: cli.critical_threshold(),
+            resume: cli.resume_threshold(),
+        },
+        backoff: strainer::config::BackoffConfig {
+            min_seconds: cli.min_backoff(),
+            max_seconds: cli.max_backoff(),
+        },
+        process: strainer::config::ProcessConfig {
+            pause_on_warning: cli.pause_on_warning(),
+            pause_on_critical: cli.pause_on_critical(),
+        },
+        api: strainer::config::ApiConfig {
+            provider_config,
+            api_key: cli.api_key(),
+            base_url: Some(cli.api_base_url().to_string()),
+        },
+        ..Default::default()
     }
 }
 
@@ -156,6 +165,8 @@ fn watch_process(pid: u32, _config: Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::{Cli, Commands};
+    use crate::providers::config::MockConfig;
     use std::process::Command;
     use std::time::Duration;
     use tempfile::tempdir;
@@ -173,7 +184,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_success() {
         let mut config = Config::default();
-        config.api.provider = "mock".to_string();
+        config.api.provider_config = ProviderConfig::Mock(MockConfig::default());
 
         let result = run_command(vec!["true".to_string()], config).await;
         assert!(result.is_ok());
@@ -182,7 +193,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_failure() {
         let mut config = Config::default();
-        config.api.provider = "mock".to_string();
+        config.api.provider_config = ProviderConfig::Mock(MockConfig::default());
 
         let result = run_command(vec!["false".to_string()], config).await;
         assert!(result.is_ok()); // The command runs successfully but exits with non-zero
@@ -191,7 +202,7 @@ mod tests {
     #[tokio::test]
     async fn test_run_command_with_rate_limits() {
         let mut config = Config::default();
-        config.api.provider = "mock".to_string();
+        config.api.provider_config = ProviderConfig::Mock(MockConfig::default());
         config.limits.requests_per_minute = Some(1);
         config.thresholds.critical = 50;
         config.process.pause_on_critical = true;
@@ -253,33 +264,70 @@ mod tests {
             "--config",
             config_path.to_str().unwrap(),
             "--no-prompt",
-            "--force",
         ];
 
-        let result = Cli::try_parse_from(args).map(|cli| cli.command);
-        assert!(matches!(
-            result.unwrap(),
-            Commands::Init {
-                config: Some(_),
-                no_prompt: true,
-                force: true
-            }
-        ));
+        let cli = Cli::parse_from(args);
+        if let Commands::Init {
+            config,
+            no_prompt,
+            force,
+        } = cli.command
+        {
+            let result = init::initialize_config(init::InitOptions {
+                config_path: config,
+                no_prompt,
+                force,
+            })
+            .await;
+            assert!(result.is_ok());
+            assert!(config_path.exists());
+        } else {
+            panic!("Expected Init command");
+        }
     }
 
     #[tokio::test]
     async fn test_main_run_command() {
-        let args = vec!["strainer", "run", "--", "true"];
-
-        let result = Cli::try_parse_from(args).map(|cli| cli.command);
-        assert!(matches!(result.unwrap(), Commands::Run { .. }));
+        let args = vec!["strainer", "run", "--api", "mock", "--", "true"];
+        let cli = Cli::parse_from(args);
+        match cli.command {
+            Commands::Run { ref command, .. } => {
+                let config = create_cli_config(&cli.command);
+                let result = run_command(command.clone(), config).await;
+                assert!(result.is_ok());
+            }
+            _ => panic!("Expected Run command"),
+        }
     }
 
     #[tokio::test]
     async fn test_main_watch_command() {
-        let args = vec!["strainer", "watch", "--pid", "1234"];
+        let child = Command::new("sleep")
+            .arg("1")
+            .spawn()
+            .expect("Failed to start sleep command");
 
-        let result = Cli::try_parse_from(args).map(|cli| cli.command);
-        assert!(matches!(result.unwrap(), Commands::Watch { pid: 1234, .. }));
+        let pid_str = child.id().to_string();
+        let args = vec!["strainer", "watch", "--api", "mock", "--pid", &pid_str];
+
+        let cli = Cli::parse_from(args.clone());
+        let pid = match &cli.command {
+            Commands::Watch { pid, .. } => *pid,
+            _ => panic!("Expected Watch command"),
+        };
+
+        let config = Config {
+            api: strainer::config::ApiConfig {
+                provider_config: ProviderConfig::Mock(MockConfig::default()),
+                api_key: None,
+                base_url: None,
+            },
+            ..Default::default()
+        };
+
+        let result = watch_process(pid, config);
+        assert!(result.is_ok());
+
+        let _ = child.wait_with_output();
     }
 }

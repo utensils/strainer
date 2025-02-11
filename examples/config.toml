@@ -1,18 +1,14 @@
 # Example configuration file for strainer
 
 [api]
-# API provider (currently only supports "anthropic")
-provider = "anthropic"
+# Provider configuration using type-safe enum
+provider_config = { type = "anthropic", model = "claude-2", max_tokens = 100000 }
+
 # API key (can also be set via STRAINER_API_KEY environment variable)
 api_key = "${ANTHROPIC_API_KEY}"
+
 # Optional custom base URL
 base_url = "https://api.anthropic.com/v1"
-
-# Provider-specific settings
-[api.provider_specific]
-model = "claude-2"
-max_tokens = 100000
-temperature = 0.7
 
 [limits]
 # Rate limits (per minute)
@@ -21,10 +17,17 @@ tokens_per_minute = 100000
 
 [process]
 # Process control thresholds
-warning_threshold = 80
-critical_threshold = 95
+pause_on_warning = false
 pause_on_critical = true
-resume_threshold = 70
+
+[thresholds]
+warning = 80
+critical = 95
+resume = 70
+
+[backoff]
+min_seconds = 1
+max_seconds = 60
 
 [logging]
 level = "info"

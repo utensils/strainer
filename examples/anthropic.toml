@@ -1,10 +1,19 @@
 # Example configuration for Anthropic API usage
 # Save this as config.toml and run with: strainer --config config.toml
 
-# Provider Configuration
-[provider]
-name = "anthropic"
-api_key = "${ANTHROPIC_API_KEY}"  # Set your API key in environment
+[api]
+# Provider configuration using type-safe enum
+provider_config = { 
+    type = "anthropic", 
+    model = "claude-2", 
+    max_tokens = 100000,
+    parameters = { temperature = "0.7" }
+}
+
+# API key (can also be set via STRAINER_API_KEY environment variable)
+api_key = "${ANTHROPIC_API_KEY}"
+
+# Base URL for Anthropic API
 base_url = "https://api.anthropic.com/v1"
 
 # Rate Limits - Configured for typical Anthropic limits

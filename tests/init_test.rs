@@ -22,6 +22,9 @@ async fn test_init_command_creates_config() -> anyhow::Result<()> {
 
     cmd.assert().success();
 
+    let config_content = fs::read_to_string(&config_path)?;
+    // Check for new format content
+    assert!(config_content.contains("type = \"anthropic\""));
     assert!(config_path.exists());
     Ok(())
 }
@@ -65,7 +68,7 @@ async fn test_init_command_force_override() -> anyhow::Result<()> {
     cmd.assert().success();
 
     let config_content = fs::read_to_string(config_path)?;
-    assert!(config_content.contains("provider"));
+    assert!(config_content.contains("type = \"anthropic\""));
     Ok(())
 }
 
@@ -123,6 +126,52 @@ async fn test_anthropic_api_validation() -> anyhow::Result<()> {
         .env("STRAINER_API_KEY", "test-key");
 
     cmd.assert().success();
+
+    let config_content = fs::read_to_string(config_path)?;
+    assert!(config_content.contains("type = \"anthropic\""));
+    assert!(config_content.contains("model = \"claude-2\""));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_openai_provider_config() -> anyhow::Result<()> {
+    let temp_dir = TempDir::new()?;
+    let config_path = temp_dir.path().join("config.toml");
+
+    let mut cmd = Command::cargo_bin("strainer")?;
+    cmd.arg("init")
+        .arg("--no-prompt")
+        .arg("--config")
+        .arg(config_path.as_os_str())
+        .env("STRAINER_PROVIDER", "openai")
+        .env("STRAINER_API_KEY", "test-key")
+        .env("STRAINER_MODEL", "gpt-4");
+
+    cmd.assert().success();
+
+    let config_content = fs::read_to_string(config_path)?;
+    assert!(config_content.contains("type = \"openai\""));
+    assert!(config_content.contains("model = \"gpt-4\""));
+    assert!(config_content.contains("temperature = 0.7"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_mock_provider_config() -> anyhow::Result<()> {
+    let temp_dir = TempDir::new()?;
+    let config_path = temp_dir.path().join("config.toml");
+
+    let mut cmd = Command::cargo_bin("strainer")?;
+    cmd.arg("init")
+        .arg("--no-prompt")
+        .arg("--config")
+        .arg(config_path.as_os_str())
+        .env("STRAINER_PROVIDER", "mock");
+
+    cmd.assert().success();
+
+    let config_content = fs::read_to_string(config_path)?;
+    assert!(config_content.contains("type = \"mock\""));
     Ok(())
 }
 
@@ -161,13 +210,50 @@ pub mod fixtures {
     pub fn sample_config_toml() -> String {
         r#"
 [api]
-provider = "anthropic"
 api_key = "${ANTHROPIC_API_KEY}"
 base_url = "https://api.anthropic.com/v1"
 
-[api.provider_specific]
+[api.provider]
+type = "anthropic"
 model = "claude-2"
 max_tokens = 100000
+
+[limits]
+requests_per_minute = 60
+tokens_per_minute = 100000
+"#
+        .to_string()
+    }
+
+    #[must_use]
+    pub fn sample_openai_config_toml() -> String {
+        r#"
+[api]
+api_key = "${OPENAI_API_KEY}"
+base_url = "https://api.openai.com/v1"
+
+[api.provider]
+type = "openai"
+model = "gpt-4"
+max_tokens = 2000
+temperature = 0.7
+
+[limits]
+requests_per_minute = 60
+tokens_per_minute = 100000
+"#
+        .to_string()
+    }
+
+    #[must_use]
+    pub fn sample_mock_config_toml() -> String {
+        r#"
+[api]
+api_key = "mock-key"
+base_url = "http://localhost:8080"
+
+[api.provider]
+type = "mock"
 
 [limits]
 requests_per_minute = 60

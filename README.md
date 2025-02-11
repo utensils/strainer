@@ -42,15 +42,29 @@ Here's a complete example configuration file with all available options:
 ```toml
 # API Configuration
 [api]
-provider = "anthropic"  # Currently supported: "anthropic"
+# Provider Configuration - Choose one of the following provider sections:
+
+# For Anthropic:
+[api.provider]
+type = "anthropic"
 api_key = "${ANTHROPIC_API_KEY}"  # Can use environment variables
 base_url = "https://api.anthropic.com/v1"  # Optional, defaults to official API
-
-# Provider-specific settings (optional)
-[api.provider_specific]
 model = "claude-2"
 max_tokens = 100000
 temperature = 0.7
+
+# For OpenAI (example):
+# [api.provider]
+# type = "openai"
+# api_key = "${OPENAI_API_KEY}"
+# model = "gpt-4"
+# max_tokens = 100000
+# temperature = 0.7
+
+# For Mock Provider (testing):
+# [api.provider]
+# type = "mock"
+# delay_ms = 100  # Simulated API delay
 
 # Rate Limits
 [limits]
@@ -85,8 +99,16 @@ format = "text"  # Log format: text or json
 All configuration values can be set via environment variables using the `${VAR_NAME}` syntax in the TOML file. For example:
 
 ```toml
-[provider]
+[api.provider]
+type = "anthropic"
 api_key = "${ANTHROPIC_API_KEY}"
+```
+
+The provider type and other configuration settings can also be set via environment variables:
+
+```bash
+STRAINER_PROVIDER_TYPE=anthropic
+STRAINER_API_KEY=your-api-key
 ```
 
 ### Thresholds Explained

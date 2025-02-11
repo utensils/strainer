@@ -24,7 +24,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Initialize a new configuration
     Init {
@@ -162,6 +162,7 @@ pub enum Commands {
 }
 
 impl Commands {
+    #[must_use]
     pub const fn requests_per_minute(&self) -> Option<u32> {
         match self {
             Self::Run {
@@ -176,6 +177,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn tokens_per_minute(&self) -> Option<u32> {
         match self {
             Self::Run {
@@ -188,6 +190,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn input_tokens_per_minute(&self) -> Option<u32> {
         match self {
             Self::Run {
@@ -202,6 +205,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn warning_threshold(&self) -> u8 {
         match self {
             Self::Run {
@@ -214,6 +218,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn critical_threshold(&self) -> u8 {
         match self {
             Self::Run {
@@ -226,6 +231,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn resume_threshold(&self) -> u8 {
         match self {
             Self::Run {
@@ -238,6 +244,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn min_backoff(&self) -> u32 {
         match self {
             Self::Run { min_backoff, .. } | Self::Watch { min_backoff, .. } => *min_backoff,
@@ -245,6 +252,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn max_backoff(&self) -> u32 {
         match self {
             Self::Run { max_backoff, .. } | Self::Watch { max_backoff, .. } => *max_backoff,
@@ -252,6 +260,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub fn api(&self) -> &str {
         match self {
             Self::Run { api, .. } | Self::Watch { api, .. } => api,
@@ -259,6 +268,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub fn api_key(&self) -> Option<String> {
         match self {
             Self::Run { api_key, .. } | Self::Watch { api_key, .. } => api_key.clone(),
@@ -266,6 +276,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub fn api_base_url(&self) -> &str {
         match self {
             Self::Run { api_base_url, .. } | Self::Watch { api_base_url, .. } => api_base_url,
@@ -273,6 +284,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn pause_on_warning(&self) -> bool {
         match self {
             Self::Run {
@@ -285,6 +297,7 @@ impl Commands {
         }
     }
 
+    #[must_use]
     pub const fn pause_on_critical(&self) -> bool {
         match self {
             Self::Run {

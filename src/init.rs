@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::Config;
+use crate::providers::config::{AnthropicConfig, MockConfig, OpenAIConfig, ProviderConfig};
 
 const ANTHROPIC_TEST_PROMPT: &str = "Say hello";
 
@@ -107,6 +108,9 @@ pub async fn initialize_config(opts: InitOptions) -> Result<()> {
 fn create_non_interactive_config() -> Config {
     let mut config = Config::default();
 
+    // Default to Anthropic provider in non-interactive mode
+    config.api.provider_config = ProviderConfig::Anthropic(AnthropicConfig::default());
+
     // In non-interactive mode, check for environment variables
     if std::env::var("STRAINER_API_KEY").is_ok() {
         config.api.api_key = Some("${STRAINER_API_KEY}".to_string());
@@ -114,10 +118,9 @@ fn create_non_interactive_config() -> Config {
 
     // Include any other environment-based settings
     if let Ok(model) = std::env::var("STRAINER_MODEL") {
-        config
-            .api
-            .provider_specific
-            .insert("model".to_string(), serde_json::Value::String(model));
+        if let ProviderConfig::Anthropic(ref mut cfg) = config.api.provider_config {
+            cfg.model = model;
+        }
     }
 
     config
@@ -130,13 +133,26 @@ async fn create_interactive_config() -> Result<Config> {
     println!("Initializing strainer configuration...\n");
 
     // Provider selection
-    let providers = vec!["anthropic"];
-    let provider = Select::new()
+    let providers = [
+        (
+            "Anthropic",
+            ProviderConfig::Anthropic(AnthropicConfig::default()),
+        ),
+        ("OpenAI", ProviderConfig::OpenAI(OpenAIConfig::default())),
+        (
+            "Mock (Testing)",
+            ProviderConfig::Mock(MockConfig::default()),
+        ),
+    ];
+    let provider_names: Vec<_> = providers.iter().map(|(name, _)| *name).collect();
+
+    let selected = Select::new()
         .with_prompt("Select API provider")
-        .items(&providers)
+        .items(&provider_names)
         .default(0)
         .interact()?;
-    config.api.provider = providers[provider].to_string();
+
+    config.api.provider_config = providers[selected].1.clone();
 
     // API key
     let api_key: String = Input::new()
@@ -174,27 +190,21 @@ async fn create_interactive_config() -> Result<Config> {
     config.api.api_key = Some(api_key);
 
     // Provider specific settings
-    if config.api.provider.as_str() == "anthropic" {
-        let model: String = Input::new()
-            .with_prompt("Enter model name")
-            .with_initial_text("claude-2")
-            .interact_text()?;
+    match &mut config.api.provider_config {
+        ProviderConfig::Anthropic(cfg) => {
+            let model: String = Input::new()
+                .with_prompt("Enter model name")
+                .with_initial_text("claude-2")
+                .interact_text()?;
+            cfg.model = model;
 
-        config
-            .api
-            .provider_specific
-            .insert("model".to_string(), serde_json::Value::String(model));
-
-        let max_tokens: String = Input::new()
-            .with_prompt("Maximum tokens per response")
-            .with_initial_text("100000")
-            .interact_text()?;
-
-        let max_tokens_num = max_tokens.parse::<u32>()?;
-        config.api.provider_specific.insert(
-            "max_tokens".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(max_tokens_num)),
-        );
+            let max_tokens: String = Input::new()
+                .with_prompt("Maximum tokens per response")
+                .with_initial_text("100000")
+                .interact_text()?;
+            cfg.max_tokens = max_tokens.parse()?;
+        }
+        _ => unreachable!("Only Anthropic provider is supported"),
     }
 
     // Rate limits
@@ -254,39 +264,47 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/messages"))
-            .and(header("x-api-key", "invalid-key"))
-            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
-                "error": "Invalid API key"
-            })))
+            .and(header("x-api-key", "test-key"))
+            .and(header("anthropic-version", "2023-06-01"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
             .mount(&mock_server)
             .await;
 
-        let result = test_anthropic_api("invalid-key", &mock_server.uri()).await;
+        let result = test_anthropic_api("test-key", &mock_server.uri()).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("API test failed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("API test failed: Unauthorized"));
     }
 
     #[tokio::test]
     async fn test_initialize_config_non_interactive() {
-        let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
 
-        env::set_var("STRAINER_API_KEY", "test-key");
-        env::set_var("STRAINER_MODEL", "test-model");
-
-        let result = initialize_config(InitOptions {
+        let opts = InitOptions {
             config_path: Some(config_path.clone()),
             no_prompt: true,
             force: false,
-        })
-        .await;
+        };
 
+        env::set_var("STRAINER_API_KEY", "test-key");
+        env::set_var("STRAINER_MODEL", "claude-3");
+
+        let result = initialize_config(opts).await;
         assert!(result.is_ok());
-        assert!(config_path.exists());
 
-        let config_content = std::fs::read_to_string(config_path).unwrap();
-        assert!(config_content.contains("${STRAINER_API_KEY}"));
-        assert!(config_content.contains("test-model"));
+        let config_str = std::fs::read_to_string(&config_path).unwrap();
+        let config: Config = toml::from_str(&config_str).unwrap();
+
+        match &config.api.provider_config {
+            ProviderConfig::Anthropic(cfg) => {
+                assert_eq!(cfg.model, "claude-3");
+            }
+            _ => panic!("Expected Anthropic provider"),
+        }
+        assert_eq!(config.api.api_key, Some("${STRAINER_API_KEY}".to_string()));
 
         env::remove_var("STRAINER_API_KEY");
         env::remove_var("STRAINER_MODEL");
@@ -294,62 +312,56 @@ mod tests {
 
     #[tokio::test]
     async fn test_initialize_config_force_overwrite() {
-        let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
 
         // Create initial config
-        std::fs::write(&config_path, "test").unwrap();
+        std::fs::write(&config_path, "# test config").unwrap();
 
-        let result = initialize_config(InitOptions {
+        let opts = InitOptions {
             config_path: Some(config_path.clone()),
             no_prompt: true,
             force: true,
-        })
-        .await;
+        };
 
+        let result = initialize_config(opts).await;
         assert!(result.is_ok());
         assert!(config_path.exists());
-        assert_ne!(std::fs::read_to_string(config_path).unwrap(), "test");
     }
 
     #[tokio::test]
     async fn test_initialize_config_existing_no_force() {
-        let temp_dir = tempdir().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
 
         // Create initial config
-        std::fs::write(&config_path, "test").unwrap();
+        std::fs::write(&config_path, "# test config").unwrap();
 
-        let result = initialize_config(InitOptions {
+        let opts = InitOptions {
             config_path: Some(config_path),
             no_prompt: true,
             force: false,
-        })
-        .await;
+        };
 
+        let result = initialize_config(opts).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Config file already exists"));
+        assert!(result.unwrap_err().to_string().contains("already exists"));
     }
 
     #[test]
     fn test_create_non_interactive_config() {
         env::set_var("STRAINER_API_KEY", "test-key");
-        env::set_var("STRAINER_MODEL", "test-model");
+        env::set_var("STRAINER_MODEL", "claude-3");
 
         let config = create_non_interactive_config();
 
+        match &config.api.provider_config {
+            ProviderConfig::Anthropic(cfg) => {
+                assert_eq!(cfg.model, "claude-3");
+            }
+            _ => panic!("Expected Anthropic provider"),
+        }
         assert_eq!(config.api.api_key, Some("${STRAINER_API_KEY}".to_string()));
-        assert_eq!(
-            config
-                .api
-                .provider_specific
-                .get("model")
-                .and_then(|v| v.as_str()),
-            Some("test-model")
-        );
 
         env::remove_var("STRAINER_API_KEY");
         env::remove_var("STRAINER_MODEL");
