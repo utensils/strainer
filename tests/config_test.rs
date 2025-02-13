@@ -12,20 +12,17 @@ use common::{DirGuard, EnvGuard};
 
 #[test]
 fn test_config_from_file() -> Result<()> {
-    // Create guards first to ensure cleanup
-    let (_dir_guard, _env_guard) = {
-        let dir_guard = DirGuard::new()?;
-        let env_guard = EnvGuard::new(vec![
-            "STRAINER_API_KEY",
-            "STRAINER_PROVIDER_TYPE",
-            "STRAINER_BASE_URL",
-            "STRAINER_MODEL",
-            "STRAINER_MAX_TOKENS",
-        ]);
-        (dir_guard, env_guard)
-    };
-
+    // Create guards first to ensure proper cleanup order
+    let _env_guard = EnvGuard::new(vec![
+        "STRAINER_API_KEY",
+        "STRAINER_PROVIDER_TYPE",
+        "STRAINER_BASE_URL",
+        "STRAINER_MODEL",
+        "STRAINER_MAX_TOKENS",
+    ]);
+    let _dir_guard = DirGuard::new()?;
     let dir = tempdir()?;
+
     let config_path = dir.path().join("config.toml");
 
     let config_content = r#"
@@ -89,24 +86,24 @@ fn test_config_from_file() -> Result<()> {
     assert_eq!(config.logging.level, "info");
     assert_eq!(config.logging.format, "text");
 
+    // Variables will be dropped in reverse order of declaration
     Ok(())
 }
 
 #[test]
 fn test_config_from_env() -> Result<()> {
-    // Create guards first to ensure cleanup
-    let (_dir_guard, _env_guard) = {
-        let dir_guard = DirGuard::new()?;
-        let env_guard = EnvGuard::new(vec![
-            "STRAINER_PROVIDER_TYPE",
-            "STRAINER_BASE_URL",
-            "STRAINER_API_KEY",
-        ]);
-        (dir_guard, env_guard)
-    };
+    // Create guards first to ensure proper cleanup order
+    let _env_guard = EnvGuard::new(vec![
+        "STRAINER_API_KEY",
+        "STRAINER_PROVIDER_TYPE",
+        "STRAINER_BASE_URL",
+        "STRAINER_MODEL",
+        "STRAINER_MAX_TOKENS",
+    ]);
+    let _dir_guard = DirGuard::new()?;
+    let dir = tempdir()?;
 
     // Create an isolated directory for the test
-    let dir = tempdir()?;
     env::set_current_dir(dir.path())?;
 
     // Set test environment variables after guards are created
@@ -136,12 +133,22 @@ fn test_config_from_env() -> Result<()> {
     assert_eq!(config.limits.requests_per_minute, Some(30));
     assert_eq!(config.limits.tokens_per_minute, Some(50000));
 
+    // Variables will be dropped in reverse order of declaration
     Ok(())
 }
 
 #[test]
 fn test_config_merge_env_over_file() -> Result<()> {
+    // Create guards first to ensure proper cleanup order
+    let _env_guard = EnvGuard::new(vec![
+        "STRAINER_PROVIDER_TYPE",
+        "STRAINER_BASE_URL",
+        "STRAINER_API_KEY",
+    ]);
+    let _dir_guard = DirGuard::new()?;
     let dir = tempdir()?;
+
+    // Set up test
     let config_path = dir.path().join("config.toml");
     let config_content = r#"
         [api]
@@ -177,18 +184,19 @@ fn test_config_merge_env_over_file() -> Result<()> {
     "#;
     fs::write(&config_path, config_content)?;
 
-    // Create guards after tempdir to ensure proper cleanup order
-    let dir_guard = DirGuard::new()?;
-    let env_guard = EnvGuard::new(vec![
-        "STRAINER_PROVIDER_TYPE",
-        "STRAINER_BASE_URL",
-        "STRAINER_API_KEY",
-    ]);
-
     // Set environment variables
     env::set_var("STRAINER_API_KEY", "env-key");
     env::set_var("STRAINER_PROVIDER_TYPE", "mock");
     env::set_var("STRAINER_BASE_URL", "https://env.api.com");
+
+    // Debug output
+    println!("Environment variables after setting:");
+    println!("STRAINER_API_KEY={:?}", env::var("STRAINER_API_KEY"));
+    println!(
+        "STRAINER_PROVIDER_TYPE={:?}",
+        env::var("STRAINER_PROVIDER_TYPE")
+    );
+    println!("STRAINER_BASE_URL={:?}", env::var("STRAINER_BASE_URL"));
 
     // Change to the temp directory
     env::set_current_dir(dir.path())?;
@@ -199,6 +207,12 @@ fn test_config_merge_env_over_file() -> Result<()> {
         .from_env()?
         .build()?;
 
+    // Debug output
+    println!("Config after loading:");
+    println!("api_key={:?}", config.api.api_key);
+    println!("base_url={:?}", config.api.base_url);
+    println!("provider_type={:?}", config.api.provider_config);
+
     assert_eq!(config.api.api_key, Some("env-key".to_string()));
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
     match &config.api.provider_config {
@@ -206,10 +220,7 @@ fn test_config_merge_env_over_file() -> Result<()> {
         _ => panic!("Expected Mock provider"),
     }
 
-    // Guards will be dropped first, restoring the environment,
-    // then tempdir will be dropped
-    drop(dir_guard);
-    drop(env_guard);
+    // Variables will be dropped in reverse order of declaration
     Ok(())
 }
 
@@ -626,19 +637,16 @@ fn test_builder_methods() -> Result<()> {
 
 #[test]
 fn test_load_with_env_override() -> Result<()> {
-    // Create guards first to ensure cleanup
-    let (_dir_guard, _env_guard) = {
-        let dir_guard = DirGuard::new()?;
-        let env_guard = EnvGuard::new(vec![
-            "STRAINER_PROVIDER_TYPE",
-            "STRAINER_BASE_URL",
-            "STRAINER_API_KEY",
-        ]);
-        (dir_guard, env_guard)
-    };
+    // Create guards first to ensure proper cleanup order
+    let _env_guard = EnvGuard::new(vec![
+        "STRAINER_PROVIDER_TYPE",
+        "STRAINER_BASE_URL",
+        "STRAINER_API_KEY",
+    ]);
+    let _dir_guard = DirGuard::new()?;
+    let dir = tempdir()?;
 
     // Create an isolated directory for the test
-    let dir = tempdir()?;
     env::set_current_dir(dir.path())?;
 
     // Set test environment variables after guards are created
@@ -657,17 +665,19 @@ fn test_load_with_env_override() -> Result<()> {
     assert_eq!(config.api.api_key, Some("env-key".to_string()));
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
 
+    // Variables will be dropped in reverse order of declaration
     Ok(())
 }
 
 #[tokio::test]
 async fn test_initialize_config_non_interactive() {
-    let _dir_guard = DirGuard::new().unwrap();
+    // Create guards first to ensure proper cleanup order
     let _env_guard = EnvGuard::new(vec![
         "STRAINER_API_KEY",
         "STRAINER_MODEL",
         "STRAINER_PROVIDER",
     ]);
+    let _dir_guard = DirGuard::new().unwrap();
 
     let dir = tempdir().unwrap();
     let config_path = dir.path().join("config.toml");
@@ -695,6 +705,8 @@ async fn test_initialize_config_non_interactive() {
         _ => panic!("Expected Anthropic provider"),
     }
     assert_eq!(config.api.api_key, Some("${STRAINER_API_KEY}".to_string()));
+
+    // Variables will be dropped in reverse order of declaration
 }
 
 #[test]
