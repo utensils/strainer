@@ -7,7 +7,7 @@ provider_config = {
     type = "anthropic", 
     model = "claude-2", 
     max_tokens = 100000,
-    parameters = { temperature = "0.7" }
+    parameters = {}
 }
 
 # API key (can also be set via STRAINER_API_KEY environment variable)

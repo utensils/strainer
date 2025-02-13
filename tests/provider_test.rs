@@ -13,11 +13,7 @@ fn test_anthropic_config_validation() {
         AnthropicConfig {
             model: "claude-instant-1".to_string(),
             max_tokens: 500,
-            parameters: {
-                let mut params = HashMap::new();
-                params.insert("temperature".to_string(), "0.7".to_string());
-                params
-            },
+            parameters: { HashMap::new() },
         },
     ];
 
@@ -32,7 +28,7 @@ fn test_anthropic_config_validation() {
     // Test invalid configurations
     let invalid_configs = vec![
         AnthropicConfig {
-            model: "".to_string(),
+            model: String::new(),
             max_tokens: 1000,
             parameters: HashMap::new(),
         },
@@ -59,13 +55,12 @@ fn test_openai_config_validation() {
         OpenAIConfig {
             model: "gpt-4".to_string(),
             max_tokens: 2000,
-            temperature: 0.7,
             parameters: HashMap::new(),
         },
         OpenAIConfig {
             model: "gpt-3.5-turbo".to_string(),
             max_tokens: 1000,
-            temperature: 0.0,
+
             parameters: {
                 let mut params = HashMap::new();
                 params.insert("presence_penalty".to_string(), "0.5".to_string());
@@ -85,21 +80,13 @@ fn test_openai_config_validation() {
     // Test invalid configurations
     let invalid_configs = vec![
         OpenAIConfig {
-            model: "".to_string(),
+            model: String::new(),
             max_tokens: 2000,
-            temperature: 0.7,
             parameters: HashMap::new(),
         },
         OpenAIConfig {
             model: "gpt-4".to_string(),
             max_tokens: 0,
-            temperature: 0.7,
-            parameters: HashMap::new(),
-        },
-        OpenAIConfig {
-            model: "gpt-4".to_string(),
-            max_tokens: 2000,
-            temperature: 2.5,
             parameters: HashMap::new(),
         },
     ];
@@ -119,6 +106,9 @@ fn test_mock_config_validation() {
     let configs = vec![
         MockConfig {
             parameters: HashMap::new(),
+            requests_per_minute: 100,
+            tokens_per_minute: 1000,
+            input_tokens_per_minute: 500,
         },
         MockConfig {
             parameters: {
@@ -126,6 +116,9 @@ fn test_mock_config_validation() {
                 params.insert("test_key".to_string(), "test_value".to_string());
                 params
             },
+            requests_per_minute: 100,
+            tokens_per_minute: 1000,
+            input_tokens_per_minute: 500,
         },
     ];
 
@@ -155,8 +148,39 @@ fn test_provider_config_serialization() {
     assert!(matches!(deserialized, ProviderConfig::OpenAI(_)));
 
     // Test Mock serialization
-    let mock_config = ProviderConfig::Mock(MockConfig::default());
+    let mock_config = ProviderConfig::Mock(MockConfig {
+        parameters: HashMap::new(),
+        requests_per_minute: 100,
+        tokens_per_minute: 1000,
+        input_tokens_per_minute: 500,
+    });
     let json = serde_json::to_string(&mock_config).unwrap();
     let deserialized: ProviderConfig = serde_json::from_str(&json).unwrap();
     assert!(matches!(deserialized, ProviderConfig::Mock(_)));
+}
+
+#[test]
+fn test_mock_provider_config() {
+    let mock_config = MockConfig {
+        parameters: HashMap::new(),
+        requests_per_minute: 100,
+        tokens_per_minute: 1000,
+        input_tokens_per_minute: 500,
+    };
+    let provider_config = ProviderConfig::Mock(mock_config);
+    assert!(matches!(provider_config, ProviderConfig::Mock(_)));
+}
+
+#[test]
+fn test_mock_provider_config_with_params() {
+    let mut params = HashMap::new();
+    params.insert("test".to_string(), "value".to_string());
+    let mock_config = MockConfig {
+        parameters: params,
+        requests_per_minute: 100,
+        tokens_per_minute: 1000,
+        input_tokens_per_minute: 500,
+    };
+    let provider_config = ProviderConfig::Mock(mock_config);
+    assert!(matches!(provider_config, ProviderConfig::Mock(_)));
 }

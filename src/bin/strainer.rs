@@ -2,35 +2,37 @@ use anyhow::Result;
 use clap::Parser;
 use strainer::config::Config;
 use strainer::providers;
-use strainer::providers::config::{AnthropicConfig, ProviderConfig};
+use strainer::providers::config::{AnthropicConfig, MockConfig, OpenAIConfig, ProviderConfig};
 use strainer::providers::rate_limiter::RateLimiter;
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use crate::cli::{Cli, Commands};
+use strainer::cli::{Cli, Commands};
+use strainer::process::ProcessController;
+use strainer::{initialize_config, InitOptions};
 
-mod cli;
-mod init;
-mod process;
+use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Setup logging based on CLI options
-    let filter = if cli.verbose { "debug" } else { &cli.log_level };
+    // Setup logging based on CLI options, but only if not already initialized
+    if std::env::var("RUST_LOG").is_err() {
+        let filter = if cli.verbose { "debug" } else { &cli.log_level };
 
-    let subscriber = fmt()
-        .with_env_filter(EnvFilter::new(filter))
-        .with_target(false)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true);
+        let subscriber = fmt()
+            .with_env_filter(EnvFilter::new(filter))
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true);
 
-    if cli.log_format == "json" {
-        subscriber.json().init();
-    } else {
-        subscriber.init();
+        if cli.log_format == "json" {
+            let _ = subscriber.json().try_init();
+        } else {
+            let _ = subscriber.try_init();
+        }
     }
 
     // Handle init command early as it doesn't need config loading
@@ -40,12 +42,20 @@ async fn main() -> Result<()> {
         force,
     } = cli.command
     {
-        return init::initialize_config(init::InitOptions {
+        return initialize_config(InitOptions {
             config_path: config,
             no_prompt,
             force,
         })
         .await;
+    }
+
+    // Check for empty command vector in Run command
+    if let Commands::Run { ref command, .. } = cli.command {
+        if command.is_empty() {
+            eprintln!("Error: No command specified");
+            anyhow::bail!("No command specified");
+        }
     }
 
     // Load configuration from file and CLI args
@@ -65,18 +75,24 @@ async fn main() -> Result<()> {
     final_config.merge(cli_config);
     final_config.validate()?;
 
-    match cli.command {
+    let result = match cli.command {
         Commands::Run { command, .. } => run_command(command, final_config).await,
         Commands::Watch { pid, .. } => watch_process(pid, final_config),
         Commands::Init { .. } => unreachable!(), // Already handled above
+    };
+
+    if let Err(ref e) = result {
+        eprintln!("{e}");
     }
+    result
 }
 
 fn create_cli_config(cli: &Commands) -> Config {
-    let provider_config = cli
-        .api()
-        .parse()
-        .unwrap_or_else(|_| ProviderConfig::Anthropic(AnthropicConfig::default()));
+    let provider_config = match cli.api() {
+        "openai" => ProviderConfig::OpenAI(OpenAIConfig::default()),
+        "mock" => ProviderConfig::Mock(MockConfig::default()),
+        _ => ProviderConfig::Anthropic(AnthropicConfig::default()),
+    };
 
     Config {
         limits: strainer::config::RateLimits {
@@ -101,27 +117,39 @@ fn create_cli_config(cli: &Commands) -> Config {
             provider_config,
             api_key: cli.api_key(),
             base_url: Some(cli.api_base_url().to_string()),
+            parameters: HashMap::default(),
         },
         ..Default::default()
     }
 }
 
 async fn run_command(command: Vec<String>, config: Config) -> Result<()> {
+    // Check for empty command vector
     if command.is_empty() {
         anyhow::bail!("No command specified");
     }
 
     // Create provider and rate limiter
     let provider = providers::create_provider(&config.api)?;
-    let mut rate_limiter =
-        RateLimiter::new(config.limits, config.thresholds, config.backoff, provider);
+    let mut rate_limiter = RateLimiter::new(config.thresholds, config.backoff, provider);
 
     // Start the process
-    let (controller, mut child) = process::ProcessController::from_command(&command)?;
+    let (controller, mut child) = ProcessController::from_command(&command)?;
     info!("Started process with PID {}", child.id());
 
     // Monitor process and rate limits
     loop {
+        // Check if process is still running first
+        if let Some(status) = child.try_wait()? {
+            info!("Process exited with status {status}");
+            // If the process exited with a non-zero status, propagate the error
+            if !status.success() {
+                anyhow::bail!("Process exited with non-zero status: {status}");
+            }
+            return Ok(());
+        }
+
+        // Process is still running, check rate limits
         let (proceed, backoff) = rate_limiter.check_limits()?;
 
         if !proceed {
@@ -137,14 +165,7 @@ async fn run_command(command: Vec<String>, config: Config) -> Result<()> {
             continue;
         }
 
-        // Check if process is still running
-        match child.try_wait()? {
-            Some(status) => {
-                info!("Process exited with status {}", status);
-                return Ok(());
-            }
-            None => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
-        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
@@ -153,7 +174,7 @@ fn watch_process(pid: u32, _config: Config) -> Result<()> {
     // If this assumption is violated, we want to panic as it indicates a serious system issue
     #[allow(clippy::cast_possible_wrap)]
     let pid_i32 = pid as i32;
-    let controller = process::ProcessController::new(pid_i32);
+    let controller = ProcessController::new(pid_i32);
     if controller.is_running() {
         println!("Process {pid} is running");
         Ok(())
@@ -165,10 +186,10 @@ fn watch_process(pid: u32, _config: Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::{Cli, Commands};
     use crate::providers::config::MockConfig;
     use std::process::Command;
     use std::time::Duration;
+    use strainer::cli::{Cli, Commands};
     use tempfile::tempdir;
 
     #[tokio::test]
@@ -196,7 +217,7 @@ mod tests {
         config.api.provider_config = ProviderConfig::Mock(MockConfig::default());
 
         let result = run_command(vec!["false".to_string()], config).await;
-        assert!(result.is_ok()); // The command runs successfully but exits with non-zero
+        assert!(result.is_err()); // The command should fail because 'false' exits with non-zero
     }
 
     #[tokio::test]
@@ -273,7 +294,7 @@ mod tests {
             force,
         } = cli.command
         {
-            let result = init::initialize_config(init::InitOptions {
+            let result = strainer::initialize_config(strainer::InitOptions {
                 config_path: config,
                 no_prompt,
                 force,
@@ -321,6 +342,7 @@ mod tests {
                 provider_config: ProviderConfig::Mock(MockConfig::default()),
                 api_key: None,
                 base_url: None,
+                parameters: HashMap::default(),
             },
             ..Default::default()
         };

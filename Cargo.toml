@@ -5,7 +5,7 @@ edition = "2021"
 authors = []
 description = "A rate limiting and spend management tool for AI APIs"
 license = "MIT"
-repository = "https://github.com/yourusername/strainer"
+repository = "https://github.com/utensils/strainer"
 keywords = ["ai", "rate-limiting", "api", "throttling", "spend-management"]
 categories = ["api-bindings", "web-programming", "development-tools"]
 
@@ -36,6 +36,10 @@ wiremock = "0.5"
 assert_cmd = "2.0"
 predicates = "3.0"
 mockito = "1.4"
+
+[[bin]]
+name = "strainer"
+path = "src/bin/strainer.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

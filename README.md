@@ -51,7 +51,6 @@ api_key = "${ANTHROPIC_API_KEY}"  # Can use environment variables
 base_url = "https://api.anthropic.com/v1"  # Optional, defaults to official API
 model = "claude-2"
 max_tokens = 100000
-temperature = 0.7
 
 # For OpenAI (example):
 # [api.provider]
@@ -59,8 +58,7 @@ temperature = 0.7
 # api_key = "${OPENAI_API_KEY}"
 # model = "gpt-4"
 # max_tokens = 100000
-# temperature = 0.7
-
+# 
 # For Mock Provider (testing):
 # [api.provider]
 # type = "mock"

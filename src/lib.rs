@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod config;
 pub mod init;
+pub mod process;
 pub mod providers;
 
 // Re-export key types for convenience

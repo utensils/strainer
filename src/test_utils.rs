@@ -1,7 +1,7 @@
 // This module is only compiled when running tests
 #![cfg(any(test, feature = "testing"))]
 
-use crate::providers::{Provider, RateLimitInfo};
+use crate::providers::{Provider, RateLimitInfo, RateLimitsConfig};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -68,6 +68,18 @@ impl Provider for MockProvider {
                 tokens_used: 0,
                 input_tokens_used: 0,
             }))
+    }
+
+    fn get_rate_limits_config(&self) -> Result<RateLimitsConfig> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push("get_rate_limits_config".to_string());
+        Ok(RateLimitsConfig {
+            requests_per_minute: Some(100),
+            tokens_per_minute: Some(1000),
+            input_tokens_per_minute: Some(500),
+        })
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

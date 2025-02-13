@@ -2,12 +2,9 @@ use anyhow::Result;
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-#[allow(unused_imports)]
 use std::time::Duration;
 use tempfile::tempdir;
 use tokio::process::Command as TokioCommand;
-#[allow(unused_imports)]
-use tokio::time::sleep;
 
 // Helper function to create a test binary
 fn create_test_binary(dir: &std::path::Path) -> Result<std::path::PathBuf> {
@@ -34,16 +31,15 @@ async fn run_strainer_command(
 ) -> Result<std::process::Output> {
     // Get the absolute path to the binary
     let current_dir = env::current_dir()?;
-    eprintln!("Current directory: {current_dir:?}");
-    let binary_path = current_dir.join("target/debug/strainer");
-    eprintln!("Looking for binary at: {binary_path:?}");
+    let binary_path = current_dir.join("target/x86_64-unknown-linux-gnu/debug/strainer");
     let binary_path = binary_path.canonicalize()?;
-    eprintln!("Canonicalized binary path: {binary_path:?}");
 
     let mut cmd = TokioCommand::new(binary_path);
     cmd.args(args);
     cmd.envs(std::env::vars());
     cmd.current_dir(test_dir.path());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
     Ok(cmd.output().await?)
 }
 
@@ -53,7 +49,7 @@ fn spawn_strainer_command(
 ) -> anyhow::Result<tokio::process::Child> {
     // Get the absolute path to the binary
     let binary_path = std::env::current_dir()?
-        .join("target/debug/strainer")
+        .join("target/x86_64-unknown-linux-gnu/debug/strainer")
         .canonicalize()?;
 
     let mut cmd = tokio::process::Command::new(binary_path);
@@ -73,9 +69,24 @@ async fn test_run_command_basic() -> Result<()> {
             "test_key",
             "--api",
             "mock",
+            "--requests-per-minute",
+            "100",
+            "--tokens-per-minute",
+            "1000",
+            "--input-tokens-per-minute",
+            "500",
+            "--warning-threshold",
+            "30",
+            "--critical-threshold",
+            "50",
+            "--resume-threshold",
+            "25",
+            "--min-backoff",
+            "1",
+            "--max-backoff",
+            "5",
             "--",
-            "echo",
-            "test",
+            "true",
         ],
         &test_dir,
     )
@@ -102,17 +113,32 @@ async fn test_run_command_rate_limits() -> anyhow::Result<()> {
             "--input-tokens-per-minute",
             "100",
             "--",
-            "echo",
-            "test_rate_limits",
+            "true",
         ],
         &test_dir,
     )
     .await?;
 
-    // Since echo runs and exits successfully, we expect a success status
     assert!(
         output.status.success(),
         "Expected run command to succeed with valid command args"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_run_command_invalid() -> Result<()> {
+    let test_dir = tempdir()?;
+
+    // Set RUST_LOG to prevent tracing initialization in the binary
+    std::env::set_var("RUST_LOG", "error");
+
+    let output = run_strainer_command(&["run", "--"], &test_dir).await?;
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Error: No command specified"),
+        "Expected error message not found in stderr: {stderr}"
     );
     Ok(())
 }
@@ -140,7 +166,7 @@ async fn test_run_command_process_control() -> anyhow::Result<()> {
         &test_dir,
     )?;
 
-    // Give it a short time to start
+    // Give it some time to start
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Kill the process
@@ -172,25 +198,8 @@ async fn test_run_command_process_control() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn test_run_command_invalid() -> Result<()> {
-    let test_dir = tempdir()?;
-    let output = run_strainer_command(
-        &["run", "--api-key", "test_key", "--api", "mock"],
-        &test_dir,
-    )
-    .await?;
-
-    // Should fail because no command was provided
-    assert!(!output.status.success());
-    Ok(())
-}
-
-#[tokio::test]
 async fn test_watch_command() -> anyhow::Result<()> {
-    // Create a temporary directory for our test processes
     let test_dir = tempdir()?;
-
-    // Create our test binary
     let test_binary = create_test_binary(test_dir.path())?;
 
     // Ensure the file is properly created before trying to execute it

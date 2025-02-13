@@ -1,6 +1,6 @@
 use crate::config::ApiConfig;
 use crate::providers::config::MockConfig;
-use crate::providers::{Provider, RateLimitInfo};
+use crate::providers::{Provider, RateLimitInfo, RateLimitsConfig};
 use anyhow::Result;
 
 /// Mock provider for testing
@@ -51,6 +51,14 @@ impl Provider for MockProvider {
         })
     }
 
+    fn get_rate_limits_config(&self) -> Result<RateLimitsConfig> {
+        Ok(RateLimitsConfig {
+            requests_per_minute: Some(self.config.requests_per_minute),
+            tokens_per_minute: Some(self.config.tokens_per_minute),
+            input_tokens_per_minute: Some(self.config.input_tokens_per_minute),
+        })
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -60,6 +68,7 @@ impl Provider for MockProvider {
 mod tests {
     use super::*;
     use crate::providers::config::ProviderConfig;
+    use std::collections::HashMap;
 
     #[test]
     fn test_mock_provider_new() {
@@ -67,6 +76,7 @@ mod tests {
             provider_config: ProviderConfig::Mock(MockConfig::default()),
             api_key: None,
             base_url: None,
+            parameters: HashMap::default(),
         };
         let provider = MockProvider::new(&config).unwrap();
         assert_eq!(provider.requests_used, 0);
@@ -82,6 +92,7 @@ mod tests {
             ),
             api_key: Some("test_key".to_string()),
             base_url: None,
+            parameters: HashMap::default(),
         };
         let provider = MockProvider::new(&config);
         assert!(provider.is_err());
@@ -97,6 +108,7 @@ mod tests {
             provider_config: ProviderConfig::Mock(MockConfig::default()),
             api_key: None,
             base_url: None,
+            parameters: HashMap::default(),
         };
         let mut provider = MockProvider::new(&config).unwrap();
         provider.set_usage(10, 100, 50);
@@ -111,6 +123,7 @@ mod tests {
             provider_config: ProviderConfig::Mock(MockConfig::default()),
             api_key: None,
             base_url: None,
+            parameters: HashMap::default(),
         };
         let mut provider = MockProvider::new(&config).unwrap();
         provider.set_usage(10, 100, 50);
@@ -126,6 +139,7 @@ mod tests {
             provider_config: ProviderConfig::Mock(MockConfig::default()),
             api_key: None,
             base_url: None,
+            parameters: HashMap::default(),
         };
         let provider = MockProvider::new(&config).unwrap();
         let _: &MockProvider = provider.as_any().downcast_ref().unwrap();

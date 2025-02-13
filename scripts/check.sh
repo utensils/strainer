@@ -7,6 +7,9 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Track overall success
+CHECKS_FAILED=0
+
 echo -e "${BLUE}Running quality checks for Strainer...${NC}\n"
 
 # Check if cargo-tarpaulin is installed and working
@@ -25,19 +28,47 @@ run_check() {
         return 0
     else
         echo -e "${RED}✗ $name failed${NC}\n"
+        CHECKS_FAILED=1
         return 1
     fi
 }
 
-# Run all checks
-run_check "cargo fmt -- --check" "Format check" || \
-    (echo -e "${BLUE}Formatting code...${NC}" && cargo fmt)
+# Run format check
+if ! run_check "cargo fmt -- --check" "Format check"; then
+    echo -e "${BLUE}Formatting code...${NC}"
+    cargo fmt
+    CHECKS_FAILED=1
+fi
 
-run_check "cargo clippy --all-targets --all-features -- -D warnings" "Clippy" || exit 1
+# Run clippy
+if ! run_check "cargo clippy --all-targets --all-features -- -D warnings" "Clippy"; then
+    exit 1
+fi
 
-run_check "cargo test --all-targets --all-features" "Tests" || exit 1
+# Build binary for integration tests
+if ! run_check "cargo build --all-targets --all-features" "Build"; then
+    exit 1
+fi
 
-echo -e "${BLUE}Running code coverage...${NC}"
-cargo tarpaulin --config tarpaulin.toml --out Xml --output-dir coverage
+# Run tests
+if ! run_check "cargo test --all-targets --all-features" "Tests"; then
+    exit 1
+fi
 
-echo -e "\n${GREEN}All checks completed successfully!${NC}"
+# Run coverage only if previous checks passed
+if [ $CHECKS_FAILED -eq 0 ]; then
+    echo -e "${BLUE}Running code coverage...${NC}"
+    if ! cargo tarpaulin --config tarpaulin.toml --out Xml --output-dir coverage; then
+        echo -e "${RED}✗ Coverage check failed${NC}\n"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Coverage check passed${NC}\n"
+fi
+
+if [ $CHECKS_FAILED -eq 0 ]; then
+    echo -e "\n${GREEN}All checks completed successfully!${NC}"
+    exit 0
+else
+    echo -e "\n${RED}Some checks failed!${NC}"
+    exit 1
+fi

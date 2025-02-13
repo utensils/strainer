@@ -6,28 +6,38 @@ pub mod config;
 pub mod mock;
 pub mod rate_limiter;
 
-/// Trait defining the interface for rate limit providers
-pub trait Provider: std::fmt::Debug + std::any::Any + Send + Sync {
-    /// Get the current rate limits from the provider
-    /// Get the current rate limits for the API provider
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Unable to fetch rate limit information from the API
-    /// - Network connectivity issues
-    /// - Invalid API response format
-    fn get_rate_limits(&self) -> Result<RateLimitInfo>;
-
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-/// Represents rate limit information from a provider
+/// Rate limit information returned by providers
 #[derive(Debug, Clone)]
 pub struct RateLimitInfo {
     pub requests_used: u32,
     pub tokens_used: u32,
     pub input_tokens_used: u32,
+}
+
+/// Rate limit configuration for providers
+#[derive(Debug, Clone)]
+pub struct RateLimitsConfig {
+    pub requests_per_minute: Option<u32>,
+    pub tokens_per_minute: Option<u32>,
+    pub input_tokens_per_minute: Option<u32>,
+}
+
+/// Provider trait for API services
+pub trait Provider: std::fmt::Debug + std::any::Any + Send + Sync {
+    /// Get the current rate limit information for this provider
+    ///
+    /// # Errors
+    /// Returns an error if unable to retrieve rate limit information from the provider
+    fn get_rate_limits(&self) -> Result<RateLimitInfo>;
+
+    /// Get the rate limit configuration for this provider
+    ///
+    /// # Errors
+    /// Returns an error if unable to retrieve rate limit configuration or if the configuration is invalid
+    fn get_rate_limits_config(&self) -> Result<RateLimitsConfig>;
+
+    /// Convert to Any for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Create a new provider based on the configuration
@@ -55,6 +65,7 @@ pub fn create_provider(config: &ApiConfig) -> Result<Box<dyn Provider>> {
 mod tests {
     use super::*;
     use crate::providers::config::{AnthropicConfig, ProviderConfig};
+    use std::collections::HashMap;
 
     #[test]
     fn test_create_anthropic_provider() {
@@ -62,6 +73,7 @@ mod tests {
             provider_config: ProviderConfig::Anthropic(AnthropicConfig::default()),
             api_key: Some("test_key".to_string()),
             base_url: None,
+            parameters: HashMap::default(),
         };
         let provider = create_provider(&config);
         assert!(provider.is_ok());
@@ -73,6 +85,7 @@ mod tests {
             provider_config: ProviderConfig::OpenAI(config::OpenAIConfig::default()),
             api_key: Some("test_key".to_string()),
             base_url: None,
+            parameters: HashMap::default(),
         };
         let provider = create_provider(&config);
         assert!(provider.is_err());

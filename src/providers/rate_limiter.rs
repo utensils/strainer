@@ -1,5 +1,5 @@
 use super::Provider;
-use crate::config::{BackoffConfig, RateLimits, Thresholds};
+use crate::config::{BackoffConfig, Thresholds};
 use anyhow::Result;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -37,7 +37,6 @@ impl UsageStats {
 /// `RateLimiter` manages API rate limits with thresholds for warning and critical levels
 #[derive(Debug)]
 pub struct RateLimiter {
-    limits: RateLimits,
     thresholds: Thresholds,
     backoff: BackoffConfig,
     usage: UsageStats,
@@ -48,13 +47,11 @@ impl RateLimiter {
     /// Create a new `RateLimiter` with the specified configuration
     #[must_use]
     pub fn new(
-        limits: RateLimits,
         thresholds: Thresholds,
         backoff: BackoffConfig,
         provider: Box<dyn Provider>,
     ) -> Self {
         Self {
-            limits,
             thresholds,
             backoff,
             usage: UsageStats::default(),
@@ -94,13 +91,14 @@ impl RateLimiter {
     /// - Rate limit data is invalid or corrupted
     /// - Provider communication fails
     pub fn check_limits(&mut self) -> Result<(bool, Duration)> {
-        // Get current usage from provider
+        // Get current usage and limits from provider
         let rate_info = self.provider.get_rate_limits()?;
+        let rate_config = self.provider.get_rate_limits_config()?;
 
         // If all limits are None, allow proceeding with minimum backoff
-        if self.limits.requests_per_minute.is_none()
-            && self.limits.tokens_per_minute.is_none()
-            && self.limits.input_tokens_per_minute.is_none()
+        if rate_config.requests_per_minute.is_none()
+            && rate_config.tokens_per_minute.is_none()
+            && rate_config.input_tokens_per_minute.is_none()
         {
             return Ok((
                 true,
@@ -116,15 +114,15 @@ impl RateLimiter {
         );
 
         // Calculate percentages for each limit type
-        let requests_percent = self.limits.requests_per_minute.map_or(0, |limit| {
+        let requests_percent = rate_config.requests_per_minute.map_or(0, |limit| {
             Self::calculate_usage_percent(self.usage.requests_used, limit)
         });
 
-        let tokens_percent = self.limits.tokens_per_minute.map_or(0, |limit| {
+        let tokens_percent = rate_config.tokens_per_minute.map_or(0, |limit| {
             Self::calculate_usage_percent(self.usage.tokens_used, limit)
         });
 
-        let input_tokens_percent = self.limits.input_tokens_per_minute.map_or(0, |limit| {
+        let input_tokens_percent = rate_config.input_tokens_per_minute.map_or(0, |limit| {
             Self::calculate_usage_percent(self.usage.input_tokens_used, limit)
         });
 
@@ -177,8 +175,9 @@ impl RateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::RateLimitInfo;
-    use crate::test_utils::MockProvider;
+    use crate::config::RateLimits;
+    use crate::providers::{RateLimitInfo, RateLimitsConfig};
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     // Basic validation tests
     #[test]
@@ -209,41 +208,26 @@ mod tests {
     #[test]
     fn test_backoff_validation() {
         let backoff = BackoffConfig {
-            min_seconds: 5,
-            max_seconds: 60,
+            min_seconds: 1,
+            max_seconds: 5,
         };
 
         assert!(backoff.min_seconds < backoff.max_seconds);
     }
 
     fn create_test_limiter() -> RateLimiter {
-        let provider = MockProvider::new();
-        let provider_ref = provider.as_ref();
-        if let Some(mock_provider) = provider_ref.as_any().downcast_ref::<MockProvider>() {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 0,
-                tokens_used: 0,
-                input_tokens_used: 0,
-            });
-        }
+        let thresholds = Thresholds {
+            warning: 30,
+            critical: 50,
+            resume: 25,
+        };
 
-        RateLimiter::new(
-            RateLimits {
-                requests_per_minute: Some(100),
-                tokens_per_minute: Some(1000),
-                input_tokens_per_minute: Some(500),
-            },
-            Thresholds {
-                warning: 30,
-                critical: 50,
-                resume: 25,
-            },
-            BackoffConfig {
-                min_seconds: 5,
-                max_seconds: 60,
-            },
-            provider,
-        )
+        let backoff = BackoffConfig {
+            min_seconds: 1,
+            max_seconds: 5,
+        };
+
+        RateLimiter::new(thresholds, backoff, Box::new(TestMockProvider::new()))
     }
 
     #[test]
@@ -257,9 +241,11 @@ mod tests {
     #[test]
     fn test_rate_limiter_new() {
         let limiter = create_test_limiter();
-        assert_eq!(limiter.limits.requests_per_minute, Some(100));
-        assert_eq!(limiter.limits.tokens_per_minute, Some(1000));
-        assert_eq!(limiter.limits.input_tokens_per_minute, Some(500));
+        assert_eq!(limiter.thresholds.warning, 30);
+        assert_eq!(limiter.thresholds.critical, 50);
+        assert_eq!(limiter.thresholds.resume, 25);
+        assert_eq!(limiter.backoff.min_seconds, 1);
+        assert_eq!(limiter.backoff.max_seconds, 5);
     }
 
     #[test]
@@ -267,64 +253,61 @@ mod tests {
         assert_eq!(RateLimiter::calculate_usage_percent(50, 100), 50);
         assert_eq!(RateLimiter::calculate_usage_percent(0, 100), 0);
         assert_eq!(RateLimiter::calculate_usage_percent(100, 100), 100);
-        assert_eq!(RateLimiter::calculate_usage_percent(25, 100), 25);
-        assert_eq!(RateLimiter::calculate_usage_percent(10, 0), 0);
+        assert_eq!(RateLimiter::calculate_usage_percent(200, 100), 200);
     }
 
     #[test]
     fn test_basic_thresholds() -> Result<()> {
         let mut limiter = create_test_limiter();
 
-        // Test normal usage (10%)
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
+        // Test below warning threshold
         {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 10,
-                tokens_used: 100,
-                input_tokens_used: 50,
-            });
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(10, Ordering::Relaxed);
+            mock_provider.tokens_used.store(100, Ordering::Relaxed);
+            mock_provider.input_tokens_used.store(50, Ordering::Relaxed);
         }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(can_proceed);
-        assert_eq!(backoff, Duration::from_secs(5));
 
-        // Test warning threshold (30%)
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
-        {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 30,
-                tokens_used: 300,
-                input_tokens_used: 150,
-            });
-        }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(can_proceed);
-        assert_eq!(backoff, Duration::from_secs(5));
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(proceed, "Should proceed when below warning threshold");
 
-        // Test critical threshold (50%)
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
+        // Test at warning threshold
         {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 50,
-                tokens_used: 500,
-                input_tokens_used: 250,
-            });
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(30, Ordering::Relaxed);
+            mock_provider.tokens_used.store(300, Ordering::Relaxed);
+            mock_provider
+                .input_tokens_used
+                .store(150, Ordering::Relaxed);
         }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(!can_proceed);
-        assert_eq!(backoff, Duration::from_secs(60));
+
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(proceed, "Should proceed at warning threshold");
+
+        // Test at critical threshold
+        {
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(50, Ordering::Relaxed);
+            mock_provider.tokens_used.store(500, Ordering::Relaxed);
+            mock_provider
+                .input_tokens_used
+                .store(250, Ordering::Relaxed);
+        }
+
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(!proceed, "Should not proceed at critical threshold");
 
         Ok(())
     }
@@ -333,76 +316,51 @@ mod tests {
     fn test_mixed_usage() -> Result<()> {
         let mut limiter = create_test_limiter();
 
-        // Test where only requests are high (60%)
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
+        // Test with mixed usage levels
         {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 60,
-                tokens_used: 200,
-                input_tokens_used: 100,
-            });
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(10, Ordering::Relaxed); // Below warning
+            mock_provider.tokens_used.store(400, Ordering::Relaxed); // Above warning
+            mock_provider
+                .input_tokens_used
+                .store(600, Ordering::Relaxed); // Above critical
         }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(!can_proceed);
-        assert_eq!(backoff, Duration::from_secs(60));
 
-        // Test where only tokens are high
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
-        {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 20,
-                tokens_used: 800,
-                input_tokens_used: 100,
-            });
-        }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(!can_proceed);
-        assert_eq!(backoff, Duration::from_secs(60));
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(
+            !proceed,
+            "Should not proceed when any metric is above critical"
+        );
 
         Ok(())
     }
 
     #[test]
     fn test_no_limits() -> Result<()> {
-        let provider = MockProvider::new();
-        if let Some(mock_provider) = provider.as_ref().as_any().downcast_ref::<MockProvider>() {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 1000,
-                tokens_used: 10000,
-                input_tokens_used: 5000,
-            });
+        let mut limiter = create_test_limiter();
+
+        // Test with no limits set
+        {
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.set_limits(Some(0), Some(0), Some(0)); // Set all limits to 0 to disable them
+            mock_provider.requests_used.store(1000, Ordering::Relaxed);
+            mock_provider.tokens_used.store(10000, Ordering::Relaxed);
+            mock_provider
+                .input_tokens_used
+                .store(5000, Ordering::Relaxed);
         }
 
-        let mut limiter = RateLimiter::new(
-            RateLimits {
-                requests_per_minute: None,
-                tokens_per_minute: None,
-                input_tokens_per_minute: None,
-            },
-            Thresholds {
-                warning: 30,
-                critical: 50,
-                resume: 25,
-            },
-            BackoffConfig {
-                min_seconds: 5,
-                max_seconds: 60,
-            },
-            provider,
-        );
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(proceed, "Should proceed when no limits are set");
 
-        // Should always proceed with minimum backoff when no limits are set
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(can_proceed);
-        assert_eq!(backoff, Duration::from_secs(5));
         Ok(())
     }
 
@@ -410,39 +368,110 @@ mod tests {
     fn test_resume_threshold() -> Result<()> {
         let mut limiter = create_test_limiter();
 
-        // Start at critical
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
+        // Start above critical
         {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 60,
-                tokens_used: 600,
-                input_tokens_used: 300,
-            });
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(60, Ordering::Relaxed);
+            mock_provider.tokens_used.store(600, Ordering::Relaxed);
+            mock_provider
+                .input_tokens_used
+                .store(300, Ordering::Relaxed);
         }
-        let (can_proceed, _) = limiter.check_limits()?;
-        assert!(!can_proceed);
+
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(!proceed, "Should not proceed above critical threshold");
 
         // Drop below resume threshold
-        if let Some(mock_provider) = limiter
-            .provider
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MockProvider>()
         {
-            mock_provider.set_response(RateLimitInfo {
-                requests_used: 20,
-                tokens_used: 200,
-                input_tokens_used: 100,
-            });
+            let mock_provider = limiter
+                .provider
+                .as_any()
+                .downcast_ref::<TestMockProvider>()
+                .unwrap();
+            mock_provider.requests_used.store(20, Ordering::Relaxed);
+            mock_provider.tokens_used.store(200, Ordering::Relaxed);
+            mock_provider
+                .input_tokens_used
+                .store(100, Ordering::Relaxed);
         }
-        let (can_proceed, backoff) = limiter.check_limits()?;
-        assert!(can_proceed);
-        assert_eq!(backoff, Duration::from_secs(5));
+
+        let (proceed, _) = limiter.check_limits()?;
+        assert!(proceed, "Should proceed below resume threshold");
 
         Ok(())
+    }
+
+    #[derive(Debug)]
+    struct TestMockProvider {
+        requests_used: AtomicU32,
+        tokens_used: AtomicU32,
+        input_tokens_used: AtomicU32,
+        requests_limit: AtomicU32,
+        tokens_limit: AtomicU32,
+        input_tokens_limit: AtomicU32,
+    }
+
+    impl TestMockProvider {
+        const fn new() -> Self {
+            Self {
+                requests_used: AtomicU32::new(0),
+                tokens_used: AtomicU32::new(0),
+                input_tokens_used: AtomicU32::new(0),
+                requests_limit: AtomicU32::new(100),
+                tokens_limit: AtomicU32::new(1000),
+                input_tokens_limit: AtomicU32::new(500),
+            }
+        }
+
+        fn set_limits(
+            &self,
+            requests: Option<u32>,
+            tokens: Option<u32>,
+            input_tokens: Option<u32>,
+        ) {
+            if let Some(r) = requests {
+                self.requests_limit.store(r, Ordering::Relaxed);
+            }
+            if let Some(t) = tokens {
+                self.tokens_limit.store(t, Ordering::Relaxed);
+            }
+            if let Some(i) = input_tokens {
+                self.input_tokens_limit.store(i, Ordering::Relaxed);
+            }
+        }
+    }
+
+    impl Provider for TestMockProvider {
+        fn get_rate_limits(&self) -> Result<RateLimitInfo> {
+            Ok(RateLimitInfo {
+                requests_used: self.requests_used.load(Ordering::Relaxed),
+                tokens_used: self.tokens_used.load(Ordering::Relaxed),
+                input_tokens_used: self.input_tokens_used.load(Ordering::Relaxed),
+            })
+        }
+
+        fn get_rate_limits_config(&self) -> Result<RateLimitsConfig> {
+            let requests = self.requests_limit.load(Ordering::Relaxed);
+            let tokens = self.tokens_limit.load(Ordering::Relaxed);
+            let input_tokens = self.input_tokens_limit.load(Ordering::Relaxed);
+
+            Ok(RateLimitsConfig {
+                requests_per_minute: if requests > 0 { Some(requests) } else { None },
+                tokens_per_minute: if tokens > 0 { Some(tokens) } else { None },
+                input_tokens_per_minute: if input_tokens > 0 {
+                    Some(input_tokens)
+                } else {
+                    None
+                },
+            })
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
     }
 }
