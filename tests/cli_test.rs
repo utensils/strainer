@@ -29,10 +29,23 @@ async fn run_strainer_command(
     args: &[&str],
     test_dir: &tempfile::TempDir,
 ) -> Result<std::process::Output> {
-    // Get the absolute path to the binary
-    let current_dir = env::current_dir()?;
-    let binary_path = current_dir.join("target/x86_64-unknown-linux-gnu/debug/strainer");
-    let binary_path = binary_path.canonicalize()?;
+    let binary_path = env::var("CARGO_BIN_EXE_strainer").unwrap_or_else(|_| {
+        // Fallback for running tests directly without cargo
+        let generic_path = env::current_dir()
+            .unwrap()
+            .join("target/debug/strainer");
+        let platform_path = env::current_dir()
+            .unwrap()
+            .join("target/x86_64-unknown-linux-gnu/debug/strainer");
+            
+        if platform_path.exists() {
+            platform_path.display().to_string()
+        } else if generic_path.exists() {
+            generic_path.display().to_string()
+        } else {
+            panic!("Could not find strainer binary in either {:?} or {:?}", generic_path, platform_path);
+        }
+    });
 
     let mut cmd = TokioCommand::new(binary_path);
     cmd.args(args);
@@ -47,10 +60,23 @@ fn spawn_strainer_command(
     args: &[&str],
     test_dir: &tempfile::TempDir,
 ) -> anyhow::Result<tokio::process::Child> {
-    // Get the absolute path to the binary
-    let binary_path = std::env::current_dir()?
-        .join("target/x86_64-unknown-linux-gnu/debug/strainer")
-        .canonicalize()?;
+    let binary_path = env::var("CARGO_BIN_EXE_strainer").unwrap_or_else(|_| {
+        // Fallback for running tests directly without cargo
+        let generic_path = env::current_dir()
+            .unwrap()
+            .join("target/debug/strainer");
+        let platform_path = env::current_dir()
+            .unwrap()
+            .join("target/x86_64-unknown-linux-gnu/debug/strainer");
+            
+        if platform_path.exists() {
+            platform_path.display().to_string()
+        } else if generic_path.exists() {
+            generic_path.display().to_string()
+        } else {
+            panic!("Could not find strainer binary in either {:?} or {:?}", generic_path, platform_path);
+        }
+    });
 
     let mut cmd = tokio::process::Command::new(binary_path);
     cmd.args(args);
