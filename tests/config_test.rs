@@ -172,11 +172,14 @@ fn test_config_merge_env_over_file() -> Result<()> {
     env::set_current_dir(dir.path())?;
 
     // Load and verify config
-    let config = Config::load_from_file("config.toml")?;
+    let config = Config::builder().from_file(&config_path)?.build()?;
 
-    assert_eq!(config.api_key(), Some("env-key"));
-    assert_eq!(config.base_url(), Some("https://env.api.com"));
-    assert!(matches!(config.provider(), Provider::Mock(_)));
+    assert_eq!(config.api.api_key, Some("env-key".to_string()));
+    assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
+    match &config.api.provider_config {
+        ProviderConfig::Mock(_) => {}
+        _ => panic!("Expected Mock provider"),
+    }
 
     // Guards will be dropped first, restoring the environment,
     // then tempdir will be dropped
