@@ -13,14 +13,6 @@ env:
 
 jobs:
   test:
-    env:
-      STRAINER_API_KEY: "env-key"
-      STRAINER_PROVIDER_CONFIG: '{"type":"anthropic","model":"claude-2","max_tokens":100000}'
-      STRAINER_BASE_URL: "https://env.api.com"
-      STRAINER_REQUESTS_PER_MINUTE: 30
-      STRAINER_TOKENS_PER_MINUTE: 50000
-      STRAINER_WARNING_THRESHOLD: 70
-      STRAINER_CRITICAL_THRESHOLD: 90
     strategy:
       fail-fast: false
       matrix:
@@ -84,14 +76,6 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
-    env:
-      STRAINER_API_KEY: "env-key"
-      STRAINER_PROVIDER_CONFIG: '{"type":"anthropic","model":"claude-2","max_tokens":100000}'
-      STRAINER_BASE_URL: "https://env.api.com"
-      STRAINER_REQUESTS_PER_MINUTE: 30
-      STRAINER_TOKENS_PER_MINUTE: 50000
-      STRAINER_WARNING_THRESHOLD: 70
-      STRAINER_CRITICAL_THRESHOLD: 90
     steps:
       - uses: actions/checkout@v4
       
