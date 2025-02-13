@@ -141,77 +141,47 @@ fn test_config_from_env() -> Result<()> {
 
 #[test]
 fn test_config_merge_env_over_file() -> Result<()> {
-    // Create guards first to ensure cleanup
-    let (_dir_guard, _env_guard) = {
-        let dir_guard = DirGuard::new()?;
-        let env_guard = EnvGuard::new(vec![
-            "STRAINER_PROVIDER_TYPE",
-            "STRAINER_BASE_URL",
-            "STRAINER_API_KEY",
-        ]);
-        (dir_guard, env_guard)
-    };
-
     let dir = tempdir()?;
     let config_path = dir.path().join("config.toml");
     let config_content = r#"
         [api]
         api_key = "file-key"
         base_url = "https://file.api.com"
-        type = "anthropic"
+        provider = "anthropic"
+
+        [provider.anthropic]
         model = "claude-2"
         max_tokens = 1000
-
-        [limits]
-        requests_per_minute = 60
-        tokens_per_minute = 100000
-        input_tokens_per_minute = 50000
-
-        [thresholds]
-        warning = 80
-        critical = 90
-        resume = 70
-
-        [backoff]
-        min_seconds = 1
-        max_seconds = 60
-
-        [process]
-        pause_on_warning = false
-        pause_on_critical = true
-
-        [logging]
-        level = "info"
-        format = "text"
     "#;
     fs::write(&config_path, config_content)?;
 
-    // Create an isolated directory for the test
-    env::set_current_dir(dir.path())?;
+    // Create guards after tempdir to ensure proper cleanup order
+    let dir_guard = DirGuard::new()?;
+    let env_guard = EnvGuard::new(vec![
+        "STRAINER_PROVIDER_TYPE",
+        "STRAINER_BASE_URL",
+        "STRAINER_API_KEY",
+    ]);
 
-    // Set environment variables after writing file but before loading config
+    // Set environment variables
+    env::set_var("STRAINER_API_KEY", "env-key");
     env::set_var("STRAINER_PROVIDER_TYPE", "mock");
     env::set_var("STRAINER_BASE_URL", "https://env.api.com");
-    env::set_var("STRAINER_API_KEY", "env-key");
 
-    // Load env config first since it has the Mock provider
-    let env_config = Config::builder().from_env()?.build()?;
+    // Change to the temp directory
+    env::set_current_dir(dir.path())?;
 
-    // Load file config but don't build it yet
-    let file_config = Config::builder().from_file(&config_path)?.build()?;
+    // Load and verify config
+    let config = Config::load_from_file("config.toml")?;
 
-    // Create a new config from file config and merge env config into it
-    let mut config = file_config;
-    config.merge(env_config);
+    assert_eq!(config.api_key(), Some("env-key"));
+    assert_eq!(config.base_url(), Some("https://env.api.com"));
+    assert!(matches!(config.provider(), Provider::Mock(_)));
 
-    // Environment should override file
-    assert_eq!(config.api.api_key, Some("env-key".to_string()));
-    assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
-    match &config.api.provider_config {
-        ProviderConfig::Mock(_) => {}
-        _ => panic!("Expected Mock provider after environment override"),
-    }
-
+    // Guards will be dropped first, restoring the environment,
+    // then tempdir will be dropped
+    drop(dir_guard);
+    drop(env_guard);
     Ok(())
 }
 

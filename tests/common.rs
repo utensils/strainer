@@ -47,8 +47,11 @@ impl DirGuard {
 
 impl Drop for DirGuard {
     fn drop(&mut self) {
-        if let Err(e) = env::set_current_dir(&self.original_dir) {
-            eprintln!("Error restoring original directory: {e}");
+        // Only try to restore the directory if it still exists
+        if self.original_dir.exists() {
+            if let Err(e) = env::set_current_dir(&self.original_dir) {
+                eprintln!("Error restoring original directory: {e}");
+            }
         }
     }
 }
