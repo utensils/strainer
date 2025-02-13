@@ -147,11 +147,33 @@ fn test_config_merge_env_over_file() -> Result<()> {
         [api]
         api_key = "file-key"
         base_url = "https://file.api.com"
-        provider = "anthropic"
+        type = "anthropic"
 
         [provider.anthropic]
         model = "claude-2"
         max_tokens = 1000
+
+        [limits]
+        requests_per_minute = 60
+        tokens_per_minute = 100000
+        input_tokens_per_minute = 50000
+
+        [thresholds]
+        warning = 80
+        critical = 90
+        resume = 70
+
+        [backoff]
+        min_seconds = 1
+        max_seconds = 60
+
+        [process]
+        pause_on_warning = false
+        pause_on_critical = true
+
+        [logging]
+        level = "info"
+        format = "text"
     "#;
     fs::write(&config_path, config_content)?;
 
@@ -172,7 +194,10 @@ fn test_config_merge_env_over_file() -> Result<()> {
     env::set_current_dir(dir.path())?;
 
     // Load and verify config
-    let config = Config::builder().from_file(&config_path)?.build()?;
+    let config = Config::builder()
+        .from_file(&config_path)?
+        .from_env()?
+        .build()?;
 
     assert_eq!(config.api.api_key, Some("env-key".to_string()));
     assert_eq!(config.api.base_url, Some("https://env.api.com".to_string()));
@@ -638,7 +663,11 @@ fn test_load_with_env_override() -> Result<()> {
 #[tokio::test]
 async fn test_initialize_config_non_interactive() {
     let _dir_guard = DirGuard::new().unwrap();
-    let _env_guard = EnvGuard::new(vec!["STRAINER_API_KEY", "STRAINER_MODEL"]);
+    let _env_guard = EnvGuard::new(vec![
+        "STRAINER_API_KEY",
+        "STRAINER_MODEL",
+        "STRAINER_PROVIDER",
+    ]);
 
     let dir = tempdir().unwrap();
     let config_path = dir.path().join("config.toml");
@@ -651,6 +680,7 @@ async fn test_initialize_config_non_interactive() {
 
     env::set_var("STRAINER_API_KEY", "test-key");
     env::set_var("STRAINER_MODEL", "claude-3");
+    env::set_var("STRAINER_PROVIDER", "anthropic");
 
     let result = initialize_config(opts).await;
     assert!(result.is_ok());
@@ -664,7 +694,6 @@ async fn test_initialize_config_non_interactive() {
         }
         _ => panic!("Expected Anthropic provider"),
     }
-    // When writing to file, we use the environment variable placeholder
     assert_eq!(config.api.api_key, Some("${STRAINER_API_KEY}".to_string()));
 }
 
