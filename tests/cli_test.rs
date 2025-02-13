@@ -31,19 +31,19 @@ async fn run_strainer_command(
 ) -> Result<std::process::Output> {
     let binary_path = env::var("CARGO_BIN_EXE_strainer").unwrap_or_else(|_| {
         // Fallback for running tests directly without cargo
-        let generic_path = env::current_dir()
-            .unwrap()
-            .join("target/debug/strainer");
+        let generic_path = env::current_dir().unwrap().join("target/debug/strainer");
         let platform_path = env::current_dir()
             .unwrap()
             .join("target/x86_64-unknown-linux-gnu/debug/strainer");
-            
+
         if platform_path.exists() {
             platform_path.display().to_string()
         } else if generic_path.exists() {
             generic_path.display().to_string()
         } else {
-            panic!("Could not find strainer binary in either {:?} or {:?}", generic_path, platform_path);
+            panic!(
+                "Could not find strainer binary in either {generic_path:?} or {platform_path:?}"
+            );
         }
     });
 
@@ -62,19 +62,19 @@ fn spawn_strainer_command(
 ) -> anyhow::Result<tokio::process::Child> {
     let binary_path = env::var("CARGO_BIN_EXE_strainer").unwrap_or_else(|_| {
         // Fallback for running tests directly without cargo
-        let generic_path = env::current_dir()
-            .unwrap()
-            .join("target/debug/strainer");
+        let generic_path = env::current_dir().unwrap().join("target/debug/strainer");
         let platform_path = env::current_dir()
             .unwrap()
             .join("target/x86_64-unknown-linux-gnu/debug/strainer");
-            
+
         if platform_path.exists() {
             platform_path.display().to_string()
         } else if generic_path.exists() {
             generic_path.display().to_string()
         } else {
-            panic!("Could not find strainer binary in either {:?} or {:?}", generic_path, platform_path);
+            panic!(
+                "Could not find strainer binary in either {generic_path:?} or {platform_path:?}"
+            );
         }
     });
 
